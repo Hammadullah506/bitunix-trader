@@ -501,24 +501,31 @@ async function spotTick() {
       if (['BTC', 'ETH', 'SOL'].includes(item.coin) && parseFloat(item.balance || 0) > 0.0001) {
         const sym = `${item.coin}USDT`;
         const scanner = multiCoinScanner[sym];
-        if (scanner && scanner.price && spotHoldings[item.coin]) {
+        if (scanner && scanner.price) {
+          // If we don't have recorded buy price, initialize with the bottom dip baseline
+          if (!spotHoldings[item.coin]) {
+            spotHoldings[item.coin] = { buyPrice: scanner.price, buyTime: Date.now() };
+            log(`[SPOT DIP TRACKER] Monitoring ${item.balance} ${item.coin} @ dip price $${scanner.price}. Target sell on +1.2% bounce.`, 'INFO');
+          }
+
           const buyP = spotHoldings[item.coin].buyPrice;
           const currP = scanner.price;
           const gainPct = ((currP - buyP) / buyP) * 100;
 
-          if (gainPct >= 1.5) {
-            log(`[SPOT PROFIT EXIT] ${item.coin} reached +${gainPct.toFixed(2)}%! Placing Spot Sell...`, 'SUCCESS');
+          // When coin rises +1.2% from bottom dip, sell for USDT profit!
+          if (gainPct >= 1.2) {
+            log(`[SPOT PROFIT EXIT] ${item.coin} bounced +${gainPct.toFixed(2)}%! Placing Spot Sell...`, 'SUCCESS');
             const sellRes = await bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
               symbol: sym,
-              side: 1,
-              type: 2,
+              side: 1, // 1 = Sell
+              type: 2, // 2 = Market
               volume: String(item.balance)
             }, true, true);
 
             if (sellRes && (sellRes.code === 0 || sellRes.code === '0')) {
               delete spotHoldings[item.coin];
               log(`[SPOT PROFIT LOCKED] Sold ${item.balance} ${item.coin} @ $${currP}!`, 'SUCCESS');
-              sendTelegramAlert(`🎯 *SPOT PROFIT LOCKED!*\n\n• *Coin:* ${item.coin}\n• *Sold Price:* ~$${currP}\n• *Profit:* +${gainPct.toFixed(2)}% 💰\n\n_Spot USDT balance has increased!_`);
+              sendTelegramAlert(`🎯 *SPOT PROFIT LOCKED!*\n\n• *Coin:* ${item.coin}\n• *Sold Amount:* ${item.balance} ${item.coin}\n• *Sold Price:* ~$${currP}\n• *Profit:* +${gainPct.toFixed(2)}% 💰\n\n_Spot USDT balance has increased!_`);
             }
           }
         }
