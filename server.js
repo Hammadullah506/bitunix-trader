@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -420,7 +420,7 @@ async function futuresTick() {
     }
 
     // 1. Strict Real Loss Protection: Cut only on genuine -$0.09 USDT (or -5% margin loss)
-    if (pnlUsd <= -0.07 || actualPnlPct <= -4.0) {
+    if (pnlUsd <= -0.03 || actualPnlPct <= -3.0) {
       log(`[STRICT SL CUT] ${pos.symbol} hit actual -$${Math.abs(pnlUsd).toFixed(4)} USDT loss! Exiting...`, 'WARNING');
       tracker.closedNotified = true;
       await closeSpecificPosition(pos);
@@ -429,27 +429,15 @@ async function futuresTick() {
       continue;
     }
 
-    // 2. 1% Profit Target — 5 Second Confirmation Close Rule
+    // 2. 1% Profit → Close Immediately (no wait — market fast hai)
     if (actualPnlPct >= 1.0) {
-      if (!tracker.profitTargetHitTime) {
-        tracker.profitTargetHitTime = Date.now();
-        log(`[1% TARGET HIT] ${pos.symbol} reached +${actualPnlPct.toFixed(2)}% profit — waiting 5s to confirm stability...`, 'INFO');
-      } else if (Date.now() - tracker.profitTargetHitTime >= 5000) {
-        // 5 seconds passed and profit still >= 1% — LOCK IT NOW!
-        log(`[PROFIT LOCK] ${pos.symbol} confirmed +${actualPnlPct.toFixed(2)}% after 5s check — closing for profit!`, 'SUCCESS');
-        tracker.closedNotified = true;
-        await closeSpecificPosition(pos);
-        totalRealizedProfitToday += pnlUsd;
-        delete positionTrackers[posId];
-        sendTelegramAlert(`💰 *1% PROFIT LOCKED!*\n\n• *Coin:* ${pos.symbol}\n• *Profit:* +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(2)}% ROI)\n• *Check:* 5s stability confirmed ✅\n• *Entry:* ~$${entryPrice}\n\n_Rotating to next sniper setup!_ 🎯`);
-        continue;
-      }
-    } else {
-      // Profit dropped below 1% — reset the confirmation timer
-      if (tracker.profitTargetHitTime) {
-        log(`[1% RESET] ${pos.symbol} dropped below 1% (now ${actualPnlPct.toFixed(2)}%) — timer reset, waiting again...`, 'INFO');
-      }
-      tracker.profitTargetHitTime = null;
+      log(`[PROFIT LOCK] ${pos.symbol} +${actualPnlPct.toFixed(2)}% — closing immediately!`, 'SUCCESS');
+      tracker.closedNotified = true;
+      await closeSpecificPosition(pos);
+      totalRealizedProfitToday += pnlUsd;
+      delete positionTrackers[posId];
+      sendTelegramAlert(`Profit Locked! ${pos.symbol}\nProfit: +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(2)}% ROI)\nEntry: $${entryPrice}\nNext setup loading...`);
+      continue;
     }
 
     // 3. Deep Trailing Runner (for positions that spike past 2.5% — bonus catcher)
