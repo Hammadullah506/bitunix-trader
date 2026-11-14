@@ -209,6 +209,7 @@ let spotHoldings = {};
 let positionTrackers = {};
 let totalRealizedProfitToday = 0.0;
 let latestFuturesCash = "9.95";
+let scanTickCount = 0;
 
 function log(message, level = 'INFO') {
   const entry = {
@@ -333,6 +334,14 @@ async function futuresTick() {
     bestOpportunity = candidates[0];
   }
 
+  scanTickCount++;
+  if (scanTickCount % 2 === 0) {
+    const btcP = multiCoinScanner['BTCUSDT'] ? multiCoinScanner['BTCUSDT'].price : '-';
+    const ethP = multiCoinScanner['ETHUSDT'] ? multiCoinScanner['ETHUSDT'].price : '-';
+    const solP = multiCoinScanner['SOLUSDT'] ? multiCoinScanner['SOLUSDT'].price : '-';
+    log(`[RADAR 5s] BTC: $${btcP} | ETH: $${ethP} | SOL: $${solP} -> 5 Markets Scanned`, 'INFO');
+  }
+
   // Active Futures Positions Monitoring
   const posRes = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
   const activePositions = (posRes && posRes.code === 0 && Array.isArray(posRes.data)) 
@@ -394,23 +403,24 @@ async function futuresTick() {
       continue;
     }
 
-    // 2. Dynamic Profit Runner (Uncapped)
-    if (priceDiffPct >= 0.8) {
-      if (!tracker.notifiedRide) {
+    // 2. Fast Scalping + Dynamic Profit Runner (Lock quick small gains or let runners fly)
+    if (priceDiffPct >= 0.35) {
+      if (priceDiffPct >= 0.8 && !tracker.notifiedRide) {
         tracker.notifiedRide = true;
         sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Status:* Profit is uncapped — letting winner run higher! 📈`);
       }
 
-      const dropThreshold = parseFloat(config.trailing_drop_threshold || 0.3);
+      // Fast rotation threshold: If trade hits +0.35% - +0.6% and pulls back 0.15%, lock it quickly!
+      const dropThreshold = priceDiffPct >= 0.8 ? 0.25 : 0.15;
       const peakPriceDrop = (tracker.maxPnlPct - leveragedPnlPct) / parseFloat(pos.leverage || 10);
 
-      if (peakPriceDrop >= dropThreshold) {
-        log(`[DYNAMIC PROFIT LOCK] ${pos.symbol} peaked at +${(tracker.maxPnlPct/10).toFixed(2)}% and pulled back. Securing profit now!`, 'SUCCESS');
+      if (peakPriceDrop >= dropThreshold && pnlUsd > 0.01) {
+        log(`[QUICK SCALP PROFIT] ${pos.symbol} locked +$${pnlUsd.toFixed(4)} USDT (+${priceDiffPct.toFixed(2)}%). Rotating to next setup!`, 'SUCCESS');
         tracker.closedNotified = true;
         await closeSpecificPosition(pos);
         totalRealizedProfitToday += pnlUsd;
         delete positionTrackers[posId];
-        sendTelegramAlert(`🎯 *STRATEGIC PROFIT SECURED!*\n\n• *Symbol:* ${pos.symbol}\n• *Locked Profit:* +$${pnlUsd.toFixed(4)} USDT 💰\n• *Net Gain:* +${priceDiffPct.toFixed(2)}%\n• *Peak was:* +${(tracker.maxPnlPct/10).toFixed(2)}%\n\n_Maximum profit locked into Bitunix wallet!_`);
+        sendTelegramAlert(`💰 *QUICK SCALP PROFIT LOCKED!*\n\n• *Symbol:* ${pos.symbol}\n• *Net Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Action:* Profit secured quickly — rotating to next sniper trade!\n\n_Cash safe in wallet!_`);
         continue;
       }
     }

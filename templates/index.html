@@ -150,13 +150,17 @@
     </div>
   </header>
 
-  <!-- ULTRA-COMPACT SLIM MULTI-COIN SCANNER STRIP -->
-  <div class="bg-[#0e121a] border-b border-[#1e2634] px-3 sm:px-5 py-1.5 overflow-x-auto hide-scrollbar">
+  <!-- ULTRA-COMPACT SLIM MULTI-COIN SCANNER STRIP WITH LIVE 5S COUNTDOWN -->
+  <div class="bg-[#0e121a] border-b border-[#1e2634] px-3 sm:px-5 py-1.5 flex items-center justify-between gap-3 overflow-x-auto hide-scrollbar">
     <div id="multi-coin-grid" class="flex items-center gap-2 min-w-max">
       <!-- Populated dynamically via JS -->
       <div class="text-[11px] text-gray-500 font-mono flex items-center gap-2">
         <i class="fa-solid fa-circle-notch fa-spin text-amber-400 text-xs"></i> Scanning top 5 crypto markets...
       </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0 text-[10px] font-mono text-gray-400 pl-2 border-l border-[#1e2634]">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+      <span id="sync-timer-label" class="text-emerald-400 font-bold">Live: 3s</span>
     </div>
   </div>
 
@@ -593,10 +597,30 @@
       });
     }
 
+    let nextSyncSeconds = 3;
+    setInterval(() => {
+      nextSyncSeconds--;
+      const lbl = document.getElementById('sync-timer-label');
+      if (!lbl) return;
+      if (nextSyncSeconds <= 0) {
+        lbl.innerText = "Syncing...";
+        lbl.className = "text-amber-400 font-bold";
+      } else {
+        lbl.innerText = `Live: ${nextSyncSeconds}s`;
+        lbl.className = "text-emerald-400 font-bold";
+      }
+    }, 1000);
+
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status?_t=' + Date.now());
         const data = await res.json();
+        nextSyncSeconds = 3;
+        const lbl = document.getElementById('sync-timer-label');
+        if (lbl) {
+          lbl.innerText = "Live: 3s";
+          lbl.className = "text-emerald-400 font-bold";
+        }
         updateUI(data);
       } catch (err) {
         console.error("Status fetch error:", err);
