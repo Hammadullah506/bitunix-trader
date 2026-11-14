@@ -12,11 +12,11 @@ app.use(express.static(path.join(__dirname, 'templates')));
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 const COIN_CONFIGS = {
-  'BTCUSDT': { qty: '0.0004', name: 'Bitcoin', precision: 4 },
-  'ETHUSDT': { qty: '0.008', name: 'Ethereum', precision: 4 },
-  'SOLUSDT': { qty: '0.15', name: 'Solana', precision: 2 },
-  'XRPUSDT': { qty: '20', name: 'Ripple', precision: 1 },
-  'DOGEUSDT': { qty: '150', name: 'Dogecoin', precision: 0 }
+  'BTCUSDT': { qty: '0.0004', name: 'BTC', precision: 4 },
+  'ETHUSDT': { qty: '0.008', name: 'ETH', precision: 4 },
+  'SOLUSDT': { qty: '0.15', name: 'SOL', precision: 2 },
+  'XRPUSDT': { qty: '20', name: 'XRP', precision: 1 },
+  'DOGEUSDT': { qty: '150', name: 'DOGE', precision: 0 }
 };
 
 function loadConfig() {
@@ -36,7 +36,7 @@ function loadConfig() {
     trailing_drop_threshold: 0.3,
     fixed_stop_loss_pct: 0.5,
     paper_balance: 1000.0,
-    check_interval_seconds: 6,
+    check_interval_seconds: 5,
     rsi_oversold: 30,
     rsi_overbought: 70,
     telegram_bot_token: "9036982151:AAEuubGBVf722GnWtg-NG2I_w2wyOkdOjwg",
@@ -188,7 +188,7 @@ function calculateRSI(prices, period = 14) {
 // State
 let isRunning = true;
 let logs = [];
-let currentTicker = {};
+let currentTicker = { last: '65500', high: '69000', low: '64800' };
 let currentIndicators = {};
 let lastSignal = { signal: 'HOLD', reason: 'Scanning multi-coin market...', confidence: 0 };
 let multiCoinScanner = {};
@@ -204,20 +204,21 @@ function log(message, level = 'INFO') {
     message: message
   };
   logs.unshift(entry);
-  if (logs.length > 100) logs.pop();
+  if (logs.length > 80) logs.pop();
   console.log(`[${entry.time}] [${level}] ${message}`);
 }
 
-// Futures Strategic Engine
+// Parallel Ultra-Fast Multi-Coin Scan
 async function futuresTick() {
   const interval = config.interval || '5m';
   const symbolsToScan = config.multi_coin_mode ? Object.keys(COIN_CONFIGS) : [config.symbol || 'BTCUSDT'];
   let bestOpportunity = null;
 
-  for (const sym of symbolsToScan) {
+  // Run all coin scans in parallel for ultra-fast response
+  const scanPromises = symbolsToScan.map(async (sym) => {
     try {
-      const kRes = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: interval, limit: 60 });
-      if (!kRes || kRes.code !== 0 || !Array.isArray(kRes.data) || kRes.data.length < 25) continue;
+      const kRes = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: interval, limit: 50 });
+      if (!kRes || kRes.code !== 0 || !Array.isArray(kRes.data) || kRes.data.length < 20) return null;
 
       const sorted = [...kRes.data].sort((a, b) => parseInt(a.time) - parseInt(b.time));
       const closes = sorted.map(c => parseFloat(c.close));
@@ -271,6 +272,13 @@ async function futuresTick() {
       };
 
       if (sym === (config.symbol || 'BTCUSDT')) {
+        currentTicker = {
+          symbol: sym,
+          last: String(latestPrice),
+          lastPrice: String(latestPrice),
+          high: String(Math.max(...closes.slice(-24))),
+          low: String(Math.min(...closes.slice(-24)))
+        };
         currentIndicators = {
           latest_price: latestPrice,
           current_rsi: currRsi,
@@ -290,18 +298,26 @@ async function futuresTick() {
       }
 
       if (confidence >= 80 && (sig === 'BUY' || sig === 'SELL')) {
-        if (!bestOpportunity || confidence > bestOpportunity.confidence) {
-          bestOpportunity = {
-            symbol: sym,
-            signal: sig,
-            price: latestPrice,
-            confidence: confidence,
-            reason: reason,
-            qty: COIN_CONFIGS[sym].qty
-          };
-        }
+        return {
+          symbol: sym,
+          signal: sig,
+          price: latestPrice,
+          confidence: confidence,
+          reason: reason,
+          qty: COIN_CONFIGS[sym].qty
+        };
       }
-    } catch (e) {}
+      return null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const results = await Promise.all(scanPromises);
+  const candidates = results.filter(Boolean);
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.confidence - a.confidence);
+    bestOpportunity = candidates[0];
   }
 
   // Active Futures Positions Monitoring
@@ -349,14 +365,13 @@ async function futuresTick() {
       continue;
     }
 
-    // 2. Dynamic Profit Runner (Uncapped - Let Winners Run!)
+    // 2. Dynamic Profit Runner (Uncapped)
     if (priceDiffPct >= 0.8) {
       if (!tracker.notifiedRide) {
         tracker.notifiedRide = true;
         sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Status:* Profit is uncapped — letting winner run higher! 📈`);
       }
 
-      // Trailing Drop Check
       const dropThreshold = parseFloat(config.trailing_drop_threshold || 0.3);
       const peakPriceDrop = (tracker.maxPnlPct - leveragedPnlPct) / parseFloat(pos.leverage || 10);
 
@@ -427,7 +442,6 @@ async function spotTick() {
     const usdtCoin = sAcc.data.find(c => c.coin === 'USDT');
     const usdtBal = usdtCoin ? parseFloat(usdtCoin.balance || 0) : 0;
 
-    // Check if any major coin is in oversold dip (RSI <= 30) for Spot Buy
     if (usdtBal >= 5.0) {
       for (const sym of ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']) {
         const scanner = multiCoinScanner[sym];
@@ -453,7 +467,6 @@ async function spotTick() {
       }
     }
 
-    // Spot Profit Exit (Uncapped Dynamic Rider)
     for (const item of sAcc.data) {
       if (['BTC', 'ETH', 'SOL'].includes(item.coin) && parseFloat(item.balance || 0) > 0.0001) {
         const sym = `${item.coin}USDT`;
@@ -490,6 +503,9 @@ async function masterTick() {
 }
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'index.html')));
+app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'manifest.json')));
+app.get('/sw.js', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'sw.js')));
+app.get('/icon.svg', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'icon.svg')));
 
 app.get('/api/status', async (req, res) => {
   let liveBal = null;
@@ -562,7 +578,7 @@ app.post('/api/close_position', async (req, res) => {
 
 setInterval(() => {
   masterTick().catch(e => console.error("Tick error:", e));
-}, 6000);
+}, 5000);
 
 app.listen(PORT, () => {
   log(`Bitunix Strategic Uncapped Profit Engine running on port ${PORT}`, 'SUCCESS');

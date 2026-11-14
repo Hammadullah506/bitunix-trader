@@ -1,0 +1,19 @@
+{
+  "name": "Bitunix Pro Auto-Trader",
+  "short_name": "Bitunix AI",
+  "description": "24/7 Automated AI Trading Bot for Bitunix",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0e14",
+  "theme_color": "#121722",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+
