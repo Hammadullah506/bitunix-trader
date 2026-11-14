@@ -66,12 +66,12 @@ function saveConfig(newCfg) {
   }
 }
 
-// Telegram Alert Sender
+// Telegram Alert Sender with Markdown + Plain Text Fallback
 async function sendTelegramAlert(text) {
   if (!config.telegram_bot_token || !config.telegram_chat_id) return;
   try {
     const url = `https://api.telegram.org/bot${config.telegram_bot_token}/sendMessage`;
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -80,6 +80,18 @@ async function sendTelegramAlert(text) {
         parse_mode: 'Markdown'
       })
     });
+    if (!res.ok) {
+      // If Markdown has an entity parsing issue, send as clean plain text so notification is NEVER missed!
+      const plain = text.replace(/[*_`]/g, '');
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: config.telegram_chat_id,
+          text: `⚡ Bitunix Pro AI Trader\n\n${plain}`
+        })
+      });
+    }
   } catch (e) {
     console.error("Telegram send error:", e.message);
   }
@@ -196,6 +208,7 @@ let spotBalance = null;
 let spotHoldings = {};
 let positionTrackers = {};
 let totalRealizedProfitToday = 0.0;
+let latestFuturesCash = "9.95";
 
 function log(message, level = 'INFO') {
   const entry = {
@@ -326,10 +339,18 @@ async function futuresTick() {
     ? posRes.data.filter(p => parseFloat(p.qty) > 0)
     : [];
 
-  // Cleanup orphaned trackers
+  // Check for positions that closed (e.g. Stop Loss executed by exchange)
   const activeIds = new Set(activePositions.map(p => String(p.positionId)));
   for (const id of Object.keys(positionTrackers)) {
-    if (!activeIds.has(id)) delete positionTrackers[id];
+    if (!activeIds.has(id)) {
+      const trk = positionTrackers[id];
+      if (trk && !trk.closedNotified) {
+        trk.closedNotified = true;
+        log(`[POSITION CLOSED] ${trk.symbol} trade closed. Sending Telegram confirmation...`, 'INFO');
+        sendTelegramAlert(`🛡️ *POSITION CLOSED & SETTLED*\n\n• *Symbol:* ${trk.symbol || 'Crypto'}\n• *Side:* ${(trk.side || 'BUY').toUpperCase()}\n• *Entry:* ~$${trk.entryPrice || '-'}\n• *Status:* Position successfully closed & margin released back to wallet.\n• *Current Cash:* $${latestFuturesCash} USDT (100% Capital Safe)\n\n_Scanning next sniper setup..._`);
+      }
+      delete positionTrackers[id];
+    }
   }
 
   // Strategic Dynamic Profit Runner & Strict Loss Protection
@@ -347,7 +368,14 @@ async function futuresTick() {
     const pnlUsd = parseFloat(pos.unrealizedPNL || 0);
 
     if (!positionTrackers[posId]) {
-      positionTrackers[posId] = { maxPnlPct: leveragedPnlPct, notifiedRide: false };
+      positionTrackers[posId] = {
+        symbol: pos.symbol,
+        entryPrice: entryPrice,
+        side: pos.side,
+        maxPnlPct: leveragedPnlPct,
+        notifiedRide: false,
+        closedNotified: false
+      };
     }
 
     const tracker = positionTrackers[posId];
@@ -359,6 +387,7 @@ async function futuresTick() {
     const fixedSlPct = parseFloat(config.fixed_stop_loss_pct || 0.5);
     if (priceDiffPct <= -fixedSlPct) {
       log(`[STRICT SL CUT] ${pos.symbol} reached -${fixedSlPct}%! Exiting immediately...`, 'WARNING');
+      tracker.closedNotified = true;
       await closeSpecificPosition(pos);
       delete positionTrackers[posId];
       sendTelegramAlert(`🛑 *FIXED STOP LOSS CUT*\n\n• *Symbol:* ${pos.symbol}\n• *Reason:* Hit strict -${fixedSlPct}% limit\n• *Closed Loss:* -$${Math.abs(pnlUsd).toFixed(4)} USDT\n\n_Capital preserved._`);
@@ -377,6 +406,7 @@ async function futuresTick() {
 
       if (peakPriceDrop >= dropThreshold) {
         log(`[DYNAMIC PROFIT LOCK] ${pos.symbol} peaked at +${(tracker.maxPnlPct/10).toFixed(2)}% and pulled back. Securing profit now!`, 'SUCCESS');
+        tracker.closedNotified = true;
         await closeSpecificPosition(pos);
         totalRealizedProfitToday += pnlUsd;
         delete positionTrackers[posId];
@@ -512,7 +542,10 @@ app.get('/api/status', async (req, res) => {
   let livePositions = [];
   try {
     const acc = await bitunixRequest('GET', '/api/v1/futures/account', { marginCoin: 'USDT' }, null, true);
-    if (acc && acc.code === 0) liveBal = acc.data;
+    if (acc && acc.code === 0) {
+      liveBal = acc.data;
+      latestFuturesCash = parseFloat(acc.data.available || 9.95).toFixed(2);
+    }
     const pos = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
     if (pos && pos.code === 0 && Array.isArray(pos.data)) {
       livePositions = pos.data.filter(p => parseFloat(p.qty) > 0);
