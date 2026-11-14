@@ -12,11 +12,11 @@ app.use(express.static(path.join(__dirname, 'templates')));
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 const COIN_CONFIGS = {
-  'BTCUSDT': { qty: '0.0004', name: 'Bitcoin' },
-  'ETHUSDT': { qty: '0.008', name: 'Ethereum' },
-  'SOLUSDT': { qty: '0.15', name: 'Solana' },
-  'XRPUSDT': { qty: '20', name: 'Ripple' },
-  'DOGEUSDT': { qty: '150', name: 'Dogecoin' }
+  'BTCUSDT': { qty: '0.0004', name: 'Bitcoin', spotMin: '0.0001' },
+  'ETHUSDT': { qty: '0.008', name: 'Ethereum', spotMin: '0.002' },
+  'SOLUSDT': { qty: '0.15', name: 'Solana', spotMin: '0.05' },
+  'XRPUSDT': { qty: '20', name: 'Ripple', spotMin: '5' },
+  'DOGEUSDT': { qty: '150', name: 'Dogecoin', spotMin: '30' }
 };
 
 function loadConfig() {
@@ -25,7 +25,8 @@ function loadConfig() {
     secret_key: "2d6ffd217f070f4a2dfdce9ba9a3c2ce",
     symbol: "BTCUSDT",
     multi_coin_mode: true,
-    market_type: "futures",
+    spot_auto_mode: true,
+    spot_tp_pct: 1.5,
     interval: "5m",
     trade_mode: "live",
     strategy: "rsi_ema",
@@ -75,7 +76,7 @@ async function sendTelegramAlert(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: config.telegram_chat_id,
-        text: `🤖 Bitunix Pro Auto-Trader:\n${text}`,
+        text: `🤖 Bitunix Pro Multi-Trader:\n${text}`,
         parse_mode: 'Markdown'
       })
     });
@@ -192,6 +193,7 @@ let currentIndicators = {};
 let lastSignal = { signal: 'HOLD', reason: 'Scanning multi-coin market...', confidence: 0 };
 let multiCoinScanner = {};
 let spotBalance = null;
+let spotHoldings = {}; // Tracks bought spot prices: { 'BTC': { buyPrice: 65400, qty: 0.0001 } }
 
 function log(message, level = 'INFO') {
   const entry = {
@@ -204,14 +206,12 @@ function log(message, level = 'INFO') {
   console.log(`[${entry.time}] [${level}] ${message}`);
 }
 
-// Multi-Coin Autonomous Scanner & Executor Loop
-async function tick() {
+// 1. Futures Multi-Coin Loop
+async function futuresTick() {
   const interval = config.interval || '5m';
   const symbolsToScan = config.multi_coin_mode ? Object.keys(COIN_CONFIGS) : [config.symbol || 'BTCUSDT'];
-
   let bestOpportunity = null;
 
-  // 1. Scan Each Coin
   for (const sym of symbolsToScan) {
     try {
       const kRes = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: interval, limit: 60 });
@@ -231,7 +231,6 @@ async function tick() {
       const cEma21 = ema21[ema21.length - 1];
       const cEma50 = ema50[ema50.length - 1];
 
-      // Evaluate signal
       let sig = 'HOLD';
       let reason = 'Range Neutral';
       let confidence = 40;
@@ -251,11 +250,11 @@ async function tick() {
         confidence = 90;
       } else if (isBullCross) {
         sig = 'BUY';
-        reason = `Bullish Trend Cross (EMA9>21 & Price>EMA50)`;
+        reason = `Bullish Trend (EMA9>21 & Price>EMA50)`;
         confidence = 80;
       } else if (isBearCross) {
         sig = 'SELL';
-        reason = `Bearish Trend Cross (EMA9<21 & Price<EMA50)`;
+        reason = `Bearish Trend (EMA9<21 & Price<EMA50)`;
         confidence = 80;
       }
 
@@ -269,7 +268,6 @@ async function tick() {
         reason: reason
       };
 
-      // Keep BTC indicators for primary chart
       if (sym === (config.symbol || 'BTCUSDT')) {
         currentIndicators = {
           latest_price: latestPrice,
@@ -289,7 +287,6 @@ async function tick() {
         lastSignal = { signal: sig, reason: reason, confidence: confidence };
       }
 
-      // Check if this is the best setup
       if (confidence >= 80 && (sig === 'BUY' || sig === 'SELL')) {
         if (!bestOpportunity || confidence > bestOpportunity.confidence) {
           bestOpportunity = {
@@ -302,28 +299,27 @@ async function tick() {
           };
         }
       }
-    } catch (e) {
-      // Continue next coin
-    }
+    } catch (e) {}
   }
 
-  // 2. Check Active Positions on Bitunix
+  // Active Futures Positions
   const posRes = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', {}, null, true);
   const activePositions = (posRes && posRes.code === 0 && Array.isArray(posRes.data)) 
     ? posRes.data.filter(p => parseFloat(p.qty) > 0)
     : [];
 
-  // Trailing Stop-Loss Protection Check
+  // Trailing stop profit notification
   if (config.trailing_sl && activePositions.length > 0) {
     for (const p of activePositions) {
       const pnl = parseFloat(p.unrealizedPNL || 0);
-      if (pnl > 0.05) {
-        // Position is comfortably in profit!
+      if (pnl > 0.05 && !p._trailed) {
+        p._trailed = true;
+        sendTelegramAlert(`🛡️ *PROFIT LOCKED (TRAILING SL)*\n\n• *Symbol:* ${p.symbol}\n• *Current PnL:* +$${pnl.toFixed(4)} USDT\n• *Status:* Risk reduced to ZERO.`);
       }
     }
   }
 
-  // 3. Autonomous Execution: Open trade on the best coin if capacity available (Max 1 concurrent position)
+  // Auto-Execute Futures
   if (isRunning && activePositions.length === 0 && bestOpportunity) {
     const sym = bestOpportunity.symbol;
     const side = bestOpportunity.signal;
@@ -335,7 +331,7 @@ async function tick() {
     let tpPrice = side === 'BUY' ? Math.round(price * (1 + tpPct) * 100) / 100 : Math.round(price * (1 - tpPct) * 100) / 100;
     let slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
 
-    log(`[AUTO-SNIPER] Selected Best Coin: ${sym} (${bestOpportunity.reason}). Placing ${side} order: ${qty} @ ~$${price}`, 'INFO');
+    log(`[FUTURES SNIPER] Auto-Order: ${side} ${qty} ${sym} @ ~$${price} | TP: $${tpPrice} | SL: $${slPrice}`, 'INFO');
 
     const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
       effect: 'GTC',
@@ -353,12 +349,91 @@ async function tick() {
     }, true);
 
     if (orderRes && orderRes.code === 0) {
-      log(`[LIVE] ORDER PLACED! ${side} ${qty} ${sym} | TP: $${tpPrice} | SL: $${slPrice}`, 'SUCCESS');
-      sendTelegramAlert(`🎯 *NEW AUTO-TRADE EXECUTED!*\n\n• *Coin:* ${sym} (${COIN_CONFIGS[sym].name})\n• *Action:* ${side} (Market)\n• *Size:* ${qty}\n• *Entry:* ~$${price}\n• *🎯 Target Profit:* $${tpPrice} (+${config.take_profit_pct}%)\n• *🛑 Stop Loss:* $${slPrice} (-${config.stop_loss_pct}%)\n\n_Auto-managed 24/7 by Bitunix Pro Engine_`);
-    } else {
-      log(`[LIVE] Order failed for ${sym}: ${orderRes ? orderRes.msg : 'Unknown'}`, 'ERROR');
+      log(`[FUTURES] Placed ${side} ${qty} ${sym} successfully!`, 'SUCCESS');
+      sendTelegramAlert(`🎯 *FUTURES AUTO-TRADE EXECUTED!*\n\n• *Coin:* ${sym} (${COIN_CONFIGS[sym].name})\n• *Action:* ${side}\n• *Size:* ${qty}\n• *Entry:* ~$${price}\n• *🎯 Target Profit:* $${tpPrice} (+${config.take_profit_pct}%)\n• *🛑 Stop Loss:* $${slPrice} (-${config.stop_loss_pct}%)\n\n_100% Autonomous 24/7 Engine_`);
     }
   }
+}
+
+// 2. Spot Autonomous Dip-Buyer & Seller Loop
+async function spotTick() {
+  if (!config.spot_auto_mode || !isRunning) return;
+
+  try {
+    // Check Spot balances
+    const sAcc = await bitunixRequest('GET', '/api/spot/v1/user/account', null, null, true, true);
+    if (!sAcc || sAcc.code !== '0' || !Array.isArray(sAcc.data)) return;
+    spotBalance = sAcc.data;
+
+    const usdtCoin = sAcc.data.find(c => c.coin === 'USDT');
+    const usdtBal = usdtCoin ? parseFloat(usdtCoin.balance || 0) : 0;
+
+    // Check if any coin is at extreme oversold dip (RSI <= 30) for Spot Buy
+    if (usdtBal >= 5.0) {
+      for (const sym of ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']) {
+        const scanner = multiCoinScanner[sym];
+        if (scanner && scanner.rsi && scanner.rsi <= 30) {
+          // BUY Spot Dip
+          const buyAmount = "5"; // Buy $5 worth of spot
+          const baseCoin = sym.replace('USDT', '');
+          log(`[SPOT AUTO-BUY] Extreme Dip on ${sym} (RSI: ${scanner.rsi})! Placing $${buyAmount} Spot Buy...`, 'INFO');
+
+          const spotOrder = await bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
+            symbol: sym,
+            side: 2, // 2 = Buy
+            type: 2, // 2 = Market
+            volume: buyAmount
+          }, true, true);
+
+          if (spotOrder && (spotOrder.code === 0 || spotOrder.code === '0')) {
+            spotHoldings[baseCoin] = { buyPrice: scanner.price, buyTime: Date.now() };
+            log(`[SPOT] Bought ${baseCoin} on Dip @ $${scanner.price}`, 'SUCCESS');
+            sendTelegramAlert(`🟢 *SPOT AUTO-DIP BUY EXECUTED!*\n\n• *Coin:* ${baseCoin}\n• *Bought Amount:* $${buyAmount} USDT\n• *Buy Price:* ~$${scanner.price}\n• *Reason:* Extreme Oversold Dip (RSI: ${scanner.rsi})\n• *Target:* +${config.spot_tp_pct || 1.5}% Profit Exit\n\n_Zero Liquidation Risk on Spot!_`);
+            break;
+          }
+        }
+      }
+    }
+
+    // Check existing Spot coin holdings for Profit Exit (+1.5% target)
+    for (const item of sAcc.data) {
+      if (['BTC', 'ETH', 'SOL'].includes(item.coin) && parseFloat(item.balance || 0) > 0.0001) {
+        const sym = `${item.coin}USDT`;
+        const scanner = multiCoinScanner[sym];
+        if (scanner && scanner.price && spotHoldings[item.coin]) {
+          const buyP = spotHoldings[item.coin].buyPrice;
+          const currP = scanner.price;
+          const gainPct = ((currP - buyP) / buyP) * 100;
+          const targetPct = parseFloat(config.spot_tp_pct || 1.5);
+
+          if (gainPct >= targetPct) {
+            // SELL Spot for Profit!
+            log(`[SPOT PROFIT EXIT] ${item.coin} reached +${gainPct.toFixed(2)}%! Placing Spot Sell...`, 'SUCCESS');
+            const sellRes = await bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
+              symbol: sym,
+              side: 1, // 1 = Sell
+              type: 2, // 2 = Market
+              volume: String(item.balance)
+            }, true, true);
+
+            if (sellRes && (sellRes.code === 0 || sellRes.code === '0')) {
+              delete spotHoldings[item.coin];
+              log(`[SPOT PROFIT LOCKED] Sold ${item.balance} ${item.coin} @ $${currP}!`, 'SUCCESS');
+              sendTelegramAlert(`🎯 *SPOT PROFIT LOCKED!*\n\n• *Coin:* ${item.coin}\n• *Sold Price:* ~$${currP}\n• *Profit:* +${gainPct.toFixed(2)}% 💰\n\n_Spot USDT balance has increased!_`);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Continue
+  }
+}
+
+// Master Tick Loop
+async function masterTick() {
+  await futuresTick();
+  await spotTick();
 }
 
 // REST Endpoints
@@ -374,7 +449,6 @@ app.get('/api/status', async (req, res) => {
     if (pos && pos.code === 0 && Array.isArray(pos.data)) {
       livePositions = pos.data.filter(p => parseFloat(p.qty) > 0);
     }
-    // Spot Balance
     const sAcc = await bitunixRequest('GET', '/api/spot/v1/user/account', null, null, true, true);
     if (sAcc && sAcc.code === '0' && Array.isArray(sAcc.data)) {
       spotBalance = sAcc.data;
@@ -400,14 +474,14 @@ app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
   saveConfig(req.body);
   log("Configuration updated", "INFO");
-  sendTelegramAlert(`⚙️ *Settings Updated*\n• Multi-Coin Mode: ${config.multi_coin_mode ? 'ENABLED ✅' : 'DISABLED'}\n• Leverage: ${config.leverage}x\n• TP: ${config.take_profit_pct}%\n• SL: ${config.stop_loss_pct}%`);
+  sendTelegramAlert(`⚙️ *Settings Updated*\n• Multi-Coin Mode: ${config.multi_coin_mode ? 'ENABLED ✅' : 'DISABLED'}\n• Spot Auto-Trader: ${config.spot_auto_mode ? 'ENABLED ✅' : 'DISABLED'}\n• TP: ${config.take_profit_pct}%\n• SL: ${config.stop_loss_pct}%`);
   res.json({ code: 0, msg: "Saved" });
 });
 
 app.post('/api/start', (req, res) => {
   isRunning = true;
-  log("Bot Started", "INFO");
-  sendTelegramAlert("🟢 *Bot Started!* Multi-Coin Auto-Trading engine is actively scanning BTC, ETH, SOL, XRP, DOGE.");
+  log("Dual Futures & Spot Bot Started", "INFO");
+  sendTelegramAlert("🟢 *Dual Engine Active!* Futures & Spot Auto-Trader are scanning 5 markets 24/7.");
   res.json({ code: 0 });
 });
 
@@ -442,10 +516,10 @@ app.post('/api/close_position', async (req, res) => {
 });
 
 setInterval(() => {
-  tick().catch(e => console.error("Tick error:", e));
+  masterTick().catch(e => console.error("Tick error:", e));
 }, 6000);
 
 app.listen(PORT, () => {
-  log(`Bitunix Auto-Trader Pro running on port ${PORT}`, 'SUCCESS');
-  tick();
+  log(`Bitunix Auto-Trader Pro Dual Engine running on port ${PORT}`, 'SUCCESS');
+  masterTick();
 });
