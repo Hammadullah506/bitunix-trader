@@ -12,11 +12,11 @@ app.use(express.static(path.join(__dirname, 'templates')));
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 const COIN_CONFIGS = {
-  'BTCUSDT': { qty: '0.0004', name: 'Bitcoin', spotMin: '0.0001' },
-  'ETHUSDT': { qty: '0.008', name: 'Ethereum', spotMin: '0.002' },
-  'SOLUSDT': { qty: '0.15', name: 'Solana', spotMin: '0.05' },
-  'XRPUSDT': { qty: '20', name: 'Ripple', spotMin: '5' },
-  'DOGEUSDT': { qty: '150', name: 'Dogecoin', spotMin: '30' }
+  'BTCUSDT': { qty: '0.0004', name: 'Bitcoin', precision: 4 },
+  'ETHUSDT': { qty: '0.008', name: 'Ethereum', precision: 4 },
+  'SOLUSDT': { qty: '0.15', name: 'Solana', precision: 2 },
+  'XRPUSDT': { qty: '20', name: 'Ripple', precision: 1 },
+  'DOGEUSDT': { qty: '150', name: 'Dogecoin', precision: 0 }
 };
 
 function loadConfig() {
@@ -32,9 +32,9 @@ function loadConfig() {
     strategy: "rsi_ema",
     order_qty: 0.0004,
     leverage: 10,
-    dynamic_profit_ride: true, // No fixed TP ceiling! Let profits run!
-    trailing_drop_threshold: 0.3, // Reversal threshold to lock profit
-    fixed_stop_loss_pct: 0.5, // Strict tiny loss cut
+    dynamic_profit_ride: true,
+    trailing_drop_threshold: 0.3,
+    fixed_stop_loss_pct: 0.5,
     paper_balance: 1000.0,
     check_interval_seconds: 6,
     rsi_oversold: 30,
@@ -76,7 +76,7 @@ async function sendTelegramAlert(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: config.telegram_chat_id,
-        text: `🤖 Bitunix Pro Strategic Engine:\n${text}`,
+        text: `⚡ *Bitunix Pro AI Trader*\n\n${text}`,
         parse_mode: 'Markdown'
       })
     });
@@ -96,7 +96,7 @@ async function bitunixRequest(method, endpoint, params = null, data = null, isPr
   let signQueryStr = "";
   let urlQueryStr = "";
 
-  if (params) {
+  if (params && Object.keys(params).length > 0) {
     const sortedKeys = Object.keys(params).sort();
     signQueryStr = sortedKeys.map(k => `${k}${params[k]}`).join('');
     urlQueryStr = sortedKeys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
@@ -145,7 +145,7 @@ async function bitunixRequest(method, endpoint, params = null, data = null, isPr
   }
 }
 
-// Technical Indicators
+// Indicators
 function calculateEMA(prices, period) {
   if (prices.length < period) return new Array(prices.length).fill(prices[prices.length - 1] || 0);
   const k = 2 / (period + 1);
@@ -194,10 +194,8 @@ let lastSignal = { signal: 'HOLD', reason: 'Scanning multi-coin market...', conf
 let multiCoinScanner = {};
 let spotBalance = null;
 let spotHoldings = {};
-
-// Position High-Water Mark Tracker for Dynamic Profit Riding
-// Maps positionId -> { maxPnlPct: 0.0, notifiedRide: false }
 let positionTrackers = {};
+let totalRealizedProfitToday = 0.0;
 
 function log(message, level = 'INFO') {
   const entry = {
@@ -307,31 +305,33 @@ async function futuresTick() {
   }
 
   // Active Futures Positions Monitoring
-  const posRes = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', {}, null, true);
+  const posRes = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
   const activePositions = (posRes && posRes.code === 0 && Array.isArray(posRes.data)) 
     ? posRes.data.filter(p => parseFloat(p.qty) > 0)
     : [];
 
-  // =========================================================================
-  // 🎯 STRATEGIC DYNAMIC PROFIT RIDER & STRICT FIXED LOSS CUT ENGINE
-  // =========================================================================
+  // Cleanup orphaned trackers
+  const activeIds = new Set(activePositions.map(p => String(p.positionId)));
+  for (const id of Object.keys(positionTrackers)) {
+    if (!activeIds.has(id)) delete positionTrackers[id];
+  }
+
+  // Strategic Dynamic Profit Runner & Strict Loss Protection
   for (const pos of activePositions) {
     const posId = String(pos.positionId);
     const entryPrice = parseFloat(pos.avgOpenPrice || 0);
     const currPrice = multiCoinScanner[pos.symbol] ? multiCoinScanner[pos.symbol].price : entryPrice;
     const isLong = (pos.side === 'BUY' || pos.side === 'LONG');
     
-    // Price movement % (unleveraged)
     const priceDiffPct = isLong 
       ? ((currPrice - entryPrice) / entryPrice) * 100 
       : ((entryPrice - currPrice) / entryPrice) * 100;
     
-    // Leveraged PnL % (10x)
     const leveragedPnlPct = priceDiffPct * parseFloat(pos.leverage || config.leverage || 10);
     const pnlUsd = parseFloat(pos.unrealizedPNL || 0);
 
     if (!positionTrackers[posId]) {
-      positionTrackers[posId] = { maxPnlPct: leveragedPnlPct, notifiedRide: false, startTime: Date.now() };
+      positionTrackers[posId] = { maxPnlPct: leveragedPnlPct, notifiedRide: false };
     }
 
     const tracker = positionTrackers[posId];
@@ -339,50 +339,49 @@ async function futuresTick() {
       tracker.maxPnlPct = leveragedPnlPct;
     }
 
-    // 1. STRICT FIXED LOSS CUT (-0.5% unleveraged = ~-5% leveraged)
+    // 1. Strict Fixed Loss Cut (-0.5% limit)
     const fixedSlPct = parseFloat(config.fixed_stop_loss_pct || 0.5);
     if (priceDiffPct <= -fixedSlPct) {
-      log(`[STRICT SL CUT] Position on ${pos.symbol} hit -${fixedSlPct}%! Cutting immediately to protect capital...`, 'WARNING');
+      log(`[STRICT SL CUT] ${pos.symbol} reached -${fixedSlPct}%! Exiting immediately...`, 'WARNING');
       await closeSpecificPosition(pos);
       delete positionTrackers[posId];
-      sendTelegramAlert(`🛑 *FIXED STOP LOSS CUT*\n\n• *Symbol:* ${pos.symbol}\n• *Reason:* Hit strict -${fixedSlPct}% limit\n• *Closed Loss:* -$${Math.abs(pnlUsd).toFixed(4)} USDT\n\n_Capital preserved successfully._`);
+      sendTelegramAlert(`🛑 *FIXED STOP LOSS CUT*\n\n• *Symbol:* ${pos.symbol}\n• *Reason:* Hit strict -${fixedSlPct}% limit\n• *Closed Loss:* -$${Math.abs(pnlUsd).toFixed(4)} USDT\n\n_Capital preserved._`);
       continue;
     }
 
-    // 2. DYNAMIC PROFIT RIDER (NO CEILING!)
-    // If profit crosses +0.8% unleveraged (+8% leveraged), activate profit ride mode!
+    // 2. Dynamic Profit Runner (Uncapped - Let Winners Run!)
     if (priceDiffPct >= 0.8) {
       if (!tracker.notifiedRide) {
         tracker.notifiedRide = true;
-        sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Status:* Profit is uncapped — riding trend higher! 📈`);
+        sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Status:* Profit is uncapped — letting winner run higher! 📈`);
       }
 
-      // Check if price pulled back by trailing threshold from peak
-      const dropThreshold = parseFloat(config.trailing_drop_threshold || 0.3); // 0.3% price drop from peak
+      // Trailing Drop Check
+      const dropThreshold = parseFloat(config.trailing_drop_threshold || 0.3);
       const peakPriceDrop = (tracker.maxPnlPct - leveragedPnlPct) / parseFloat(pos.leverage || 10);
 
       if (peakPriceDrop >= dropThreshold) {
         log(`[DYNAMIC PROFIT LOCK] ${pos.symbol} peaked at +${(tracker.maxPnlPct/10).toFixed(2)}% and pulled back. Securing profit now!`, 'SUCCESS');
         await closeSpecificPosition(pos);
+        totalRealizedProfitToday += pnlUsd;
         delete positionTrackers[posId];
-        sendTelegramAlert(`🎯 *PROFIT RUNNER LOCKED!*\n\n• *Symbol:* ${pos.symbol}\n• *Secured Gain:* +${priceDiffPct.toFixed(2)}%\n• *Net Profit:* +$${pnlUsd.toFixed(4)} USDT 💰\n• *Peak was:* +${(tracker.maxPnlPct/10).toFixed(2)}%\n\n_Maximum strategic profit locked into wallet!_`);
+        sendTelegramAlert(`🎯 *STRATEGIC PROFIT SECURED!*\n\n• *Symbol:* ${pos.symbol}\n• *Locked Profit:* +$${pnlUsd.toFixed(4)} USDT 💰\n• *Net Gain:* +${priceDiffPct.toFixed(2)}%\n• *Peak was:* +${(tracker.maxPnlPct/10).toFixed(2)}%\n\n_Maximum profit locked into Bitunix wallet!_`);
         continue;
       }
     }
   }
 
-  // 3. Auto-Execute New Trade if no position is active
+  // 3. Auto-Execute New Trade (Max 1 Concurrent Position)
   if (isRunning && activePositions.length === 0 && bestOpportunity) {
     const sym = bestOpportunity.symbol;
     const side = bestOpportunity.signal;
     const price = bestOpportunity.price;
     const qty = bestOpportunity.qty;
 
-    // Hard Stop Loss at fixed 0.5%
     const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
     let slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
 
-    log(`[STRATEGIC SNIPER] Opening ${side} ${qty} ${sym} @ ~$${price} with Uncapped Profit Ride | Fixed SL: $${slPrice}`, 'INFO');
+    log(`[AUTO-SNIPER] Selected Best Coin: ${sym}. Executing ${side} ${qty} @ ~$${price}`, 'INFO');
 
     const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
       effect: 'GTC',
@@ -406,6 +405,7 @@ async function futuresTick() {
 async function closeSpecificPosition(p) {
   const side = p.side === 'LONG' || p.side === 'BUY' ? 'SELL' : 'BUY';
   await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
+    effect: 'GTC',
     orderType: 'MARKET',
     positionId: String(p.positionId),
     qty: String(p.qty),
@@ -415,7 +415,7 @@ async function closeSpecificPosition(p) {
   }, true);
 }
 
-// 2. Spot Autonomous Dip-Buyer & Seller Loop
+// Spot Autonomous Dip-Buyer & Seller Loop
 async function spotTick() {
   if (!config.spot_auto_mode || !isRunning) return;
 
@@ -427,6 +427,7 @@ async function spotTick() {
     const usdtCoin = sAcc.data.find(c => c.coin === 'USDT');
     const usdtBal = usdtCoin ? parseFloat(usdtCoin.balance || 0) : 0;
 
+    // Check if any major coin is in oversold dip (RSI <= 30) for Spot Buy
     if (usdtBal >= 5.0) {
       for (const sym of ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']) {
         const scanner = multiCoinScanner[sym];
@@ -496,7 +497,7 @@ app.get('/api/status', async (req, res) => {
   try {
     const acc = await bitunixRequest('GET', '/api/v1/futures/account', { marginCoin: 'USDT' }, null, true);
     if (acc && acc.code === 0) liveBal = acc.data;
-    const pos = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', {}, null, true);
+    const pos = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
     if (pos && pos.code === 0 && Array.isArray(pos.data)) {
       livePositions = pos.data.filter(p => parseFloat(p.qty) > 0);
     }
@@ -517,6 +518,7 @@ app.get('/api/status', async (req, res) => {
     live_balance: liveBal,
     spot_balance: spotBalance,
     live_positions: livePositions,
+    total_realized_today: totalRealizedProfitToday,
     logs: logs
   });
 });
@@ -544,7 +546,7 @@ app.post('/api/stop', (req, res) => {
 });
 
 app.post('/api/close_position', async (req, res) => {
-  const pos = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', {}, null, true);
+  const pos = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
   if (pos && pos.code === 0 && Array.isArray(pos.data)) {
     for (const p of pos.data) {
       if (parseFloat(p.qty) > 0) {
