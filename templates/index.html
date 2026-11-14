@@ -170,48 +170,28 @@
     <!-- LEFT COLUMN: Position + Chart + Confluence (8 cols) -->
     <div class="lg:col-span-8 flex flex-col gap-4">
 
-      <!-- Active Position Banner -->
-      <div id="position-card" class="card-dark p-3.5 sm:p-4 border-l-4 border-gray-600 transition-all">
+      <!-- Active Positions (Multi-Coin Concurrent Slots) -->
+      <div id="position-card" class="card-dark p-3.5 sm:p-4 border-l-4 border-amber-500 transition-all">
         <div class="flex justify-between items-center mb-2">
           <div class="flex items-center gap-2">
-            <span class="text-[10px] uppercase font-bold tracking-wider text-gray-400">Futures Position</span>
-            <span id="pos-symbol-badge"
-              class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono font-bold">BTCUSDT</span>
-            <span id="pos-side-badge"
-              class="text-xs px-2 py-0.5 rounded font-bold font-mono bg-gray-700 text-gray-300">NO POSITION</span>
+            <span class="text-[10px] uppercase font-bold tracking-wider text-gray-400">Concurrent Trades</span>
+            <span id="pos-count-badge" class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono font-bold">0 / 3 SLOTS</span>
             <span class="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono font-semibold">
-              <i class="fa-solid fa-bolt"></i> Uncapped TP
+              <i class="fa-solid fa-bolt"></i> Multi-Market Scalper
             </span>
           </div>
-          <button id="btn-close-pos" onclick="closePosition()"
-            class="hidden px-2.5 py-1 bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-400 text-xs rounded-lg transition font-bold">
-            <i class="fa-solid fa-xmark mr-1"></i> Close
+          <button id="btn-close-all" onclick="closePosition()" class="hidden px-2.5 py-1 bg-red-600/20 hover:bg-red-600/40 border border-red-500/40 text-red-400 text-xs rounded-lg transition font-bold">
+            <i class="fa-solid fa-xmark mr-1"></i> Close All
           </button>
         </div>
 
         <div id="no-pos-message" class="text-xs text-gray-400 py-1.5 flex items-center gap-2 font-mono">
           <i class="fa-solid fa-radar fa-fade text-amber-400 text-xs"></i>
-          Active Scanner monitoring BTC, ETH, SOL, XRP, DOGE for sniper confluence entry...
+          Scanning BTC, ETH, SOL, XRP, DOGE — Ready to trade up to 3 concurrent sniper setups!
         </div>
 
-        <div id="pos-details" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
-          <div class="bg-[#0b0e14] p-2.5 rounded-lg border border-[#1e2634]">
-            <span class="text-[10px] text-gray-400 uppercase">Entry Price</span>
-            <div id="pos-entry" class="font-mono text-sm font-bold text-white mt-0.5">$0.00</div>
-          </div>
-          <div class="bg-[#0b0e14] p-2.5 rounded-lg border border-[#1e2634]">
-            <span class="text-[10px] text-gray-400 uppercase">Target TP / SL</span>
-            <div id="pos-targets" class="font-mono text-xs text-purple-400 font-bold mt-0.5">TP: Uncapped | SL: -0.5%
-            </div>
-          </div>
-          <div class="bg-[#0b0e14] p-2.5 rounded-lg border border-[#1e2634]">
-            <span class="text-[10px] text-gray-400 uppercase">Size & Margin</span>
-            <div id="pos-size" class="font-mono text-xs text-gray-200 mt-0.5">0.0004 BTC (~$2.62)</div>
-          </div>
-          <div class="bg-[#0b0e14] p-2.5 rounded-lg border border-[#1e2634]">
-            <span class="text-[10px] text-gray-400 uppercase">Live PnL</span>
-            <div id="pos-pnl" class="font-mono text-sm font-black text-green-400 mt-0.5">+$0.00</div>
-          </div>
+        <div id="active-positions-list" class="space-y-2 mt-2">
+          <!-- Dynamically populated cards for each active position -->
         </div>
       </div>
 
@@ -770,52 +750,46 @@
         netWorthEl.innerText = '$' + grandTotal.toFixed(2) + ' USDT';
       }
 
-      // Active Position
-      const posCard = document.getElementById('position-card');
-      const posSymbolBadge = document.getElementById('pos-symbol-badge');
-      const posSideBadge = document.getElementById('pos-side-badge');
+      // Active Positions (Concurrent Multi-Slots)
+      const countBadge = document.getElementById('pos-count-badge');
+      const btnCloseAll = document.getElementById('btn-close-all');
       const noPosMsg = document.getElementById('no-pos-message');
-      const posDetails = document.getElementById('pos-details');
-      const btnClosePos = document.getElementById('btn-close-pos');
+      const posList = document.getElementById('active-positions-list');
+      const posCard = document.getElementById('position-card');
 
-      const pos = (data.live_positions && data.live_positions[0]);
-      if (pos) {
-        if (posSymbolBadge) posSymbolBadge.innerText = pos.symbol;
-        if (posSideBadge) {
-          posSideBadge.innerText = (pos.side || 'LONG').toUpperCase();
-          posSideBadge.className = (pos.side === 'BUY' || pos.side === 'LONG') ? "text-xs px-2 py-0.5 rounded font-bold font-mono bg-green-500/20 text-green-400" : "text-xs px-2 py-0.5 rounded font-bold font-mono bg-red-500/20 text-red-400";
-        }
-        if (posCard) {
-          posCard.className = (pos.side === 'BUY' || pos.side === 'LONG') ? "card-dark p-3.5 sm:p-4 border-l-4 border-green-500 transition-all glow-green" : "card-dark p-3.5 sm:p-4 border-l-4 border-red-500 transition-all glow-red";
-        }
+      if (data.live_positions && data.live_positions.length > 0) {
+        if (countBadge) countBadge.innerText = `${data.live_positions.length} / 3 ACTIVE`;
+        if (btnCloseAll) btnCloseAll.classList.remove('hidden');
         if (noPosMsg) noPosMsg.classList.add('hidden');
-        if (posDetails) posDetails.classList.remove('hidden');
-        if (btnClosePos) btnClosePos.classList.remove('hidden');
+        if (posCard) posCard.className = "card-dark p-3.5 sm:p-4 border-l-4 border-emerald-500 transition-all glow-green";
 
-        const entry = parseFloat(pos.avgOpenPrice || pos.entry_price || 0);
-        const pnl = parseFloat(pos.unrealizedPNL || pos.pnl || 0);
-
-        const posEntry = document.getElementById('pos-entry');
-        if (posEntry) posEntry.innerText = '$' + entry.toLocaleString();
-
-        const posSize = document.getElementById('pos-size');
-        if (posSize) posSize.innerText = `${pos.qty} ${pos.symbol} (~$${parseFloat(pos.margin || 0).toFixed(2)})`;
-
-        const pnlEl = document.getElementById('pos-pnl');
-        if (pnlEl) {
-          pnlEl.innerText = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(4)} USDT`;
-          pnlEl.className = pnl >= 0 ? "font-mono text-sm font-black text-green-400" : "font-mono text-sm font-black text-red-400";
+        if (posList) {
+          posList.innerHTML = data.live_positions.map(pos => {
+            const isLong = (pos.side === 'BUY' || pos.side === 'LONG');
+            const pnl = parseFloat(pos.unrealizedPNL || pos.pnl || 0);
+            const entry = parseFloat(pos.avgOpenPrice || pos.entry_price || 0);
+            const margin = parseFloat(pos.margin || 0).toFixed(2);
+            return `
+              <div class="bg-[#0b0e14] p-3 rounded-xl border border-[#1e2634] flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-white font-mono">${pos.symbol}</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${isLong ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}">${isLong ? 'BUY' : 'SELL'} ${pos.leverage || 10}x</span>
+                  <span class="text-[10px] text-gray-400 font-mono">Entry: $${entry.toLocaleString()}</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span class="text-[10px] text-gray-400 font-mono">Margin: <b class="text-gray-200">$${margin}</b></span>
+                  <span class="text-xs font-mono font-black ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(4)} USDT</span>
+                </div>
+              </div>
+            `;
+          }).join('');
         }
       } else {
-        if (posSymbolBadge) posSymbolBadge.innerText = "MULTI-COIN";
-        if (posSideBadge) {
-          posSideBadge.innerText = "NO POSITION";
-          posSideBadge.className = "text-xs px-2 py-0.5 rounded font-bold font-mono bg-gray-700 text-gray-300";
-        }
-        if (posCard) posCard.className = "card-dark p-3.5 sm:p-4 border-l-4 border-gray-600 transition-all";
+        if (countBadge) countBadge.innerText = '0 / 3 SLOTS';
+        if (btnCloseAll) btnCloseAll.classList.add('hidden');
         if (noPosMsg) noPosMsg.classList.remove('hidden');
-        if (posDetails) posDetails.classList.add('hidden');
-        if (btnClosePos) btnClosePos.classList.add('hidden');
+        if (posList) posList.innerHTML = '';
+        if (posCard) posCard.className = "card-dark p-3.5 sm:p-4 border-l-4 border-gray-600 transition-all";
       }
 
       // Logs

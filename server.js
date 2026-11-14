@@ -42,7 +42,8 @@ function loadConfig() {
     telegram_bot_token: "9036982151:AAEuubGBVf722GnWtg-NG2I_w2wyOkdOjwg",
     telegram_chat_id: "7955301726",
     today_profit: 0.0,
-    daily_goal: 4.0
+    daily_goal: 4.0,
+    max_concurrent_positions: 3
   };
   if (fs.existsSync(CONFIG_PATH)) {
     try {
@@ -426,33 +427,43 @@ async function futuresTick() {
     }
   }
 
-  // 3. Auto-Execute New Trade (Max 1 Concurrent Position)
-  if (isRunning && activePositions.length === 0 && bestOpportunity) {
-    const sym = bestOpportunity.symbol;
-    const side = bestOpportunity.signal;
-    const price = bestOpportunity.price;
-    const qty = bestOpportunity.qty;
+  // 3. Multi-Coin Concurrent Trades (Up to 3 Simultaneous Positions on Distinct Coins)
+  const maxActivePositions = parseInt(config.max_concurrent_positions || 3);
+  const currentActiveSymbols = new Set(activePositions.map(p => p.symbol));
 
-    const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
-    let slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
+  if (isRunning && activePositions.length < maxActivePositions && candidates.length > 0) {
+    for (const opp of candidates) {
+      if (activePositions.length >= maxActivePositions) break;
+      if (currentActiveSymbols.has(opp.symbol)) continue; // Never duplicate position on same coin
 
-    log(`[AUTO-SNIPER] Selected Best Coin: ${sym}. Executing ${side} ${qty} @ ~$${price}`, 'INFO');
+      const sym = opp.symbol;
+      const side = opp.signal;
+      const price = opp.price;
+      const qty = opp.qty;
 
-    const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
-      effect: 'GTC',
-      orderType: 'MARKET',
-      qty: String(qty),
-      side: side,
-      symbol: sym,
-      tradeSide: 'OPEN',
-      slPrice: String(slPrice),
-      slOrderType: 'MARKET',
-      slStopType: 'LAST_PRICE'
-    }, true);
+      const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
+      let slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
 
-    if (orderRes && orderRes.code === 0) {
-      log(`[LIVE] Strategic Order Placed: ${side} ${qty} ${sym}!`, 'SUCCESS');
-      sendTelegramAlert(`⚡ *STRATEGIC AUTO-TRADE EXECUTED!*\n\n• *Coin:* ${sym} (${COIN_CONFIGS[sym].name})\n• *Action:* ${side} (Market)\n• *Size:* ${qty}\n• *Entry:* ~$${price}\n• *🎯 Target:* Dynamic Uncapped Profit (Letting Winner Run!)\n• *🛑 Fixed Stop:* $${slPrice} (-${config.fixed_stop_loss_pct}%)\n\n_Risk strictly controlled, profits uncapped!_`);
+      log(`[MULTI-SNIPER] Opening concurrent trade on ${sym} (${activePositions.length + 1}/${maxActivePositions} slots). Executing ${side} ${qty} @ ~$${price}`, 'INFO');
+
+      const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
+        effect: 'GTC',
+        orderType: 'MARKET',
+        qty: String(qty),
+        side: side,
+        symbol: sym,
+        tradeSide: 'OPEN',
+        slPrice: String(slPrice),
+        slOrderType: 'MARKET',
+        slStopType: 'LAST_PRICE'
+      }, true);
+
+      if (orderRes && orderRes.code === 0) {
+        currentActiveSymbols.add(sym);
+        activePositions.push({ symbol: sym, qty: qty, avgOpenPrice: price, side: side });
+        log(`[LIVE MULTI] Concurrent Order Placed: ${side} ${qty} ${sym}!`, 'SUCCESS');
+        sendTelegramAlert(`⚡ *CONCURRENT MULTI-TRADE EXECUTED!*\n\n• *Coin:* ${sym} (${COIN_CONFIGS[sym].name})\n• *Action:* ${side} (Market)\n• *Size:* ${qty}\n• *Entry:* ~$${price}\n• *🛑 Fixed Stop:* $${slPrice} (-${config.fixed_stop_loss_pct}%)\n• *Active Positions:* ${activePositions.length}/${maxActivePositions} Slots In Play\n\n_Parallel multi-coin execution active!_`);
+      }
     }
   }
 }
