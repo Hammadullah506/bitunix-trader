@@ -1,0 +1,16 @@
+{
+  "api_key": "81add794b9e4574b7d5219a3727d2911",
+  "secret_key": "2d6ffd217f070f4a2dfdce9ba9a3c2ce",
+  "symbol": "BTCUSDT",
+  "interval": "5m",
+  "trade_mode": "live",
+  "strategy": "rsi_ema",
+  "order_qty": 0.0004,
+  "leverage": 10,
+  "take_profit_pct": 1.0,
+  "stop_loss_pct": 0.5,
+  "paper_balance": 1000.0,
+  "check_interval_seconds": 6,
+  "rsi_oversold": 30,
+  "rsi_overbought": 70
+}
