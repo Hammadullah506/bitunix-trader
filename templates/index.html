@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bitunix BTCUSDT Auto-Trader</title>
+  <title>Bitunix Auto-Trader Pro</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome -->
@@ -13,7 +13,6 @@
   <style>
     body { background-color: #0b0e14; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     .card-dark { background: #151a23; border: 1px solid #232b38; border-radius: 12px; }
-    .card-header { border-bottom: 1px solid #232b38; }
     .glow-green { box-shadow: 0 0 15px rgba(34, 197, 94, 0.3); }
     .glow-red { box-shadow: 0 0 15px rgba(239, 68, 68, 0.3); }
     .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -24,60 +23,81 @@
 <body class="min-h-screen flex flex-col">
 
   <!-- Top Navigation Bar -->
-  <header class="bg-[#151a23] border-b border-[#232b38] px-6 py-4 flex flex-wrap justify-between items-center gap-4 sticky top-0 z-50">
+  <header class="bg-[#151a23] border-b border-[#232b38] px-4 sm:px-6 py-3 flex flex-wrap justify-between items-center gap-4 sticky top-0 z-50">
     <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-yellow-500 to-amber-300 flex items-center justify-center text-black font-extrabold text-xl shadow-lg">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-black font-extrabold text-xl shadow-lg">
         <i class="fa-brands fa-bitcoin"></i>
       </div>
       <div>
-        <h1 class="text-lg font-bold text-white flex items-center gap-2">
-          Bitunix Auto-Trader <span class="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">BTCUSDT</span>
+        <h1 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+          Bitunix Pro <span id="header-market-badge" class="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">FUTURES</span>
         </h1>
-        <p class="text-xs text-gray-400">Futures Perpetual Bot & Live Dashboard</p>
+        <p class="text-[11px] text-gray-400">24/7 Automated Cloud Trading Engine</p>
       </div>
     </div>
 
     <!-- Live Ticker Bar -->
-    <div class="flex items-center gap-6 text-sm">
+    <div class="flex items-center gap-4 sm:gap-6 text-sm">
       <div>
-        <span class="text-xs text-gray-400">BTC Price</span>
-        <div id="top-price" class="font-mono text-xl font-bold text-green-400">$---.--</div>
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider">BTC Price</span>
+        <div id="top-price" class="font-mono text-base sm:text-xl font-bold text-green-400">$---.--</div>
       </div>
       <div class="hidden sm:block">
-        <span class="text-xs text-gray-400">24h High</span>
-        <div id="top-high" class="font-mono text-sm text-gray-300">$---.--</div>
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider">24h High</span>
+        <div id="top-high" class="font-mono text-xs sm:text-sm text-gray-300">$---.--</div>
       </div>
       <div class="hidden sm:block">
-        <span class="text-xs text-gray-400">24h Low</span>
-        <div id="top-low" class="font-mono text-sm text-gray-300">$---.--</div>
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider">24h Low</span>
+        <div id="top-low" class="font-mono text-xs sm:text-sm text-gray-300">$---.--</div>
       </div>
       <div class="hidden md:block">
-        <span class="text-xs text-gray-400">RSI (14)</span>
-        <div id="top-rsi" class="font-mono text-sm font-bold text-blue-400">--</div>
+        <span class="text-[10px] text-gray-400 uppercase tracking-wider">RSI (14)</span>
+        <div id="top-rsi" class="font-mono text-xs sm:text-sm font-bold text-blue-400">--</div>
       </div>
     </div>
 
-    <!-- Action & Status -->
-    <div class="flex items-center gap-3">
+    <!-- Actions & Status -->
+    <div class="flex items-center gap-2 sm:gap-3">
       <div id="status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-800 text-gray-400 border border-gray-700">
         <span class="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
         <span id="status-text">BOT STOPPED</span>
       </div>
 
-      <button id="btn-toggle-bot" onclick="toggleBot()" class="px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition duration-200 bg-green-600 hover:bg-green-500 text-white shadow-md">
+      <button id="btn-toggle-bot" onclick="toggleBot()" class="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition bg-green-600 hover:bg-green-500 text-white shadow-md">
         <i class="fa-solid fa-play"></i> <span>Start Bot</span>
       </button>
 
-      <button onclick="openSettingsModal()" class="p-2.5 rounded-xl bg-[#232b38] hover:bg-[#2e3748] text-gray-300 transition" title="Bot Settings">
+      <button onclick="openSettingsModal()" class="p-2 sm:p-2.5 rounded-xl bg-[#232b38] hover:bg-[#2e3748] text-gray-300 transition" title="Bot Settings">
         <i class="fa-solid fa-gear"></i>
       </button>
     </div>
   </header>
 
-  <!-- Main Content Layout -->
-  <main class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto w-full">
+  <!-- Daily Profit Goal Banner -->
+  <div class="bg-[#10141d] border-b border-[#232b38] px-4 sm:px-6 py-2.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div class="flex items-center gap-2">
+        <span class="text-amber-400 font-bold flex items-center gap-1.5">
+          <i class="fa-solid fa-bullseye"></i> Daily Goal: $4.00 USD
+        </span>
+        <span class="text-gray-400">|</span>
+        <span class="text-gray-300">Today's Profit: <b id="daily-profit-val" class="text-green-400 font-mono">+$0.32 USDT</b></span>
+        <span id="daily-pct-badge" class="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-bold text-[10px]">8%</span>
+      </div>
+      <!-- Progress Bar -->
+      <div class="flex items-center gap-3 w-full sm:w-64">
+        <div class="w-full bg-[#1e2533] h-2 rounded-full overflow-hidden">
+          <div id="daily-progress-bar" class="bg-gradient-to-r from-amber-500 to-green-400 h-full transition-all duration-500" style="width: 8%;"></div>
+        </div>
+        <span id="daily-target-text" class="text-gray-400 font-mono text-[11px] whitespace-nowrap">$0.32 / $4.00</span>
+      </div>
+    </div>
+  </div>
 
-    <!-- LEFT COLUMN: Chart + Indicators + Active Position (8 cols) -->
+  <!-- Main Grid Layout -->
+  <main class="flex-1 p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto w-full">
+
+    <!-- LEFT COLUMN (8 cols) -->
     <div class="lg:col-span-8 flex flex-col gap-6">
 
       <!-- Active Position Banner -->
@@ -85,17 +105,20 @@
         <div class="flex justify-between items-center mb-3">
           <div class="flex items-center gap-2">
             <span class="text-xs uppercase font-bold tracking-wider text-gray-400">Active Position</span>
-            <span id="pos-mode-badge" class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">PAPER</span>
+            <span id="pos-mode-badge" class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">LIVE</span>
             <span id="pos-side-badge" class="text-xs px-2 py-0.5 rounded font-bold font-mono bg-gray-700 text-gray-300">NO POSITION</span>
+            <span id="tsl-active-badge" class="hidden text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono font-semibold">
+              <i class="fa-solid fa-shield-halved"></i> Trailing SL Locked
+            </span>
           </div>
           <button id="btn-close-pos" onclick="closePosition()" class="hidden px-3 py-1 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 text-xs rounded-lg transition font-medium">
-            <i class="fa-solid fa-circle-xmark mr-1"></i> Close Position
+            <i class="fa-solid fa-circle-xmark mr-1"></i> Close
           </button>
         </div>
 
         <div id="no-pos-message" class="text-sm text-gray-400 py-3 flex items-center gap-2">
           <i class="fa-solid fa-circle-notch fa-spin text-amber-400 text-xs"></i>
-          Waiting for next high-probability algorithmic entry signal...
+          Scanning market for next sniper algorithmic entry...
         </div>
 
         <div id="pos-details" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
@@ -108,60 +131,59 @@
             <div id="pos-targets" class="font-mono text-xs text-gray-300">TP: $0 | SL: $0</div>
           </div>
           <div>
-            <span class="text-xs text-gray-400">Size & Lev</span>
-            <div id="pos-size" class="font-mono text-sm text-gray-200">0.001 BTC (10x)</div>
+            <span class="text-xs text-gray-400">Size & Margin</span>
+            <div id="pos-size" class="font-mono text-sm text-gray-200">0.0004 BTC (~$2.62)</div>
           </div>
           <div>
             <span class="text-xs text-gray-400">Live PnL</span>
-            <div id="pos-pnl" class="font-mono text-base font-bold text-green-400">$0.00 (+0.00%)</div>
+            <div id="pos-pnl" class="font-mono text-base font-bold text-green-400">+$0.00 (+0.00%)</div>
           </div>
         </div>
       </div>
 
-      <!-- Real-time Interactive Candlestick / Price Chart -->
+      <!-- Real-time Chart -->
       <div class="card-dark p-5 flex flex-col flex-1 min-h-[380px]">
         <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
           <div class="flex items-center gap-3">
             <h2 class="text-base font-bold text-white flex items-center gap-2">
-              <i class="fa-solid fa-chart-line text-amber-400"></i> BTC/USDT Market Chart
+              <i class="fa-solid fa-chart-line text-amber-400"></i> Market Price Chart
             </h2>
-            <span class="text-xs text-gray-400 font-mono" id="chart-interval-tag">15m</span>
+            <span class="text-xs text-gray-400 font-mono" id="chart-interval-tag">5m</span>
           </div>
           <div class="flex gap-2">
             <span class="text-xs px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">EMA(9)</span>
             <span class="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono">EMA(21)</span>
           </div>
         </div>
-        <div class="relative flex-1 w-full" style="min-height: 300px;">
+        <div class="relative flex-1 w-full" style="min-height: 280px;">
           <canvas id="priceChart"></canvas>
         </div>
       </div>
 
-      <!-- Strategy Signal Confluence Card -->
+      <!-- Confluence / Signals -->
       <div class="card-dark p-5">
         <h3 class="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-brain text-purple-400"></i> Algorithmic Strategy Confluence
+          <i class="fa-solid fa-brain text-purple-400"></i> Sniper Confluence Engine
         </h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="bg-[#0e121a] p-4 rounded-xl border border-[#232b38]">
-            <span class="text-xs text-gray-400">Current Signal</span>
-            <div id="sig-type" class="text-lg font-black mt-1 font-mono text-gray-400">HOLD / NEUTRAL</div>
-            <p id="sig-reason" class="text-xs text-gray-400 mt-1 line-clamp-2">Analyzing market indicators...</p>
+            <span class="text-xs text-gray-400">Signal Status</span>
+            <div id="sig-type" class="text-lg font-black mt-1 font-mono text-gray-400">HOLD</div>
+            <p id="sig-reason" class="text-xs text-gray-400 mt-1 line-clamp-2">Analyzing indicators...</p>
           </div>
           <div class="bg-[#0e121a] p-4 rounded-xl border border-[#232b38]">
-            <span class="text-xs text-gray-400">RSI (14) Momentum</span>
+            <span class="text-xs text-gray-400">RSI Momentum</span>
             <div class="flex justify-between items-center mt-1">
               <div id="ind-rsi" class="text-xl font-bold font-mono text-blue-400">50.0</div>
               <span id="ind-rsi-state" class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-300">Neutral</span>
             </div>
-            <!-- RSI Meter bar -->
             <div class="w-full bg-gray-700 h-2 rounded-full mt-2 overflow-hidden">
-              <div id="rsi-bar" class="bg-blue-500 h-full transition-all duration-300" style="width: 50%;"></div>
+              <div id="rsi-bar" class="bg-blue-500 h-full transition-all" style="width: 50%;"></div>
             </div>
           </div>
           <div class="bg-[#0e121a] p-4 rounded-xl border border-[#232b38]">
-            <span class="text-xs text-gray-400">Trend Alignment</span>
-            <div id="trend-alignment" class="text-base font-bold text-white mt-1">EMA9 vs EMA21</div>
+            <span class="text-xs text-gray-400">Trend Confluence</span>
+            <div id="trend-alignment" class="text-sm font-bold text-white mt-1">EMA9 vs EMA21</div>
             <div class="flex justify-between text-xs text-gray-400 mt-2 font-mono">
               <span>EMA9: <b id="val-ema9" class="text-amber-400">$-</b></span>
               <span>EMA21: <b id="val-ema21" class="text-purple-400">$-</b></span>
@@ -172,31 +194,31 @@
 
     </div>
 
-    <!-- RIGHT COLUMN: Wallet/Balance + Quick Trade + Logs (4 cols) -->
+    <!-- RIGHT COLUMN (4 cols) -->
     <div class="lg:col-span-4 flex flex-col gap-6">
 
       <!-- Balance Card -->
       <div class="card-dark p-5">
-        <div class="flex justify-between items-center mb-3">
-          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Trading Account</span>
-          <span id="account-mode-tag" class="text-xs px-2 py-0.5 rounded font-mono font-bold bg-blue-500/20 text-blue-400">DEMO (PAPER)</span>
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Bitunix Wallet</span>
+          <span id="account-mode-tag" class="text-xs px-2 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-400">LIVE BITUNIX</span>
         </div>
         <div class="mt-1">
           <span class="text-xs text-gray-400">Available Balance</span>
-          <div id="account-balance" class="text-2xl font-mono font-bold text-white mt-0.5">$1,000.00 USDT</div>
+          <div id="account-balance" class="text-2xl font-mono font-bold text-white mt-0.5">$0.00 USDT</div>
         </div>
         <div class="mt-4 pt-3 border-t border-[#232b38] flex justify-between text-xs text-gray-400">
-          <span>Target Symbol: <b class="text-white">BTCUSDT</b></span>
-          <span>Leverage: <b id="disp-leverage" class="text-amber-400">10x</b></span>
+          <span>Locked Margin: <b id="locked-margin" class="text-amber-400">$0.00</b></span>
+          <span>Target Symbol: <b id="disp-symbol" class="text-white">BTCUSDT</b></span>
         </div>
       </div>
 
-      <!-- Quick Manual Controls -->
+      <!-- Quick Actions -->
       <div class="card-dark p-5">
-        <h3 class="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-hand text-green-400"></i> Manual Override
+        <h3 class="text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+          <i class="fa-solid fa-bolt text-yellow-400"></i> Fast Manual Controls
         </h3>
-        <p class="text-xs text-gray-400 mb-3">Instant trigger an order or let the algorithm manage it automatically.</p>
+        <p class="text-xs text-gray-400 mb-3">Instant override trade placement.</p>
         <div class="grid grid-cols-2 gap-3">
           <button onclick="manualOrder('BUY')" class="py-2.5 px-4 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-xs uppercase transition flex items-center justify-center gap-1.5 shadow-md">
             <i class="fa-solid fa-arrow-trend-up"></i> Buy / Long
@@ -207,28 +229,29 @@
         </div>
       </div>
 
-      <!-- Recent Closed Trades -->
-      <div class="card-dark p-5 flex flex-col">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-sm font-bold text-gray-300 flex items-center gap-2">
-            <i class="fa-solid fa-clock-rotate-left text-blue-400"></i> Recent Trades
+      <!-- Telegram Alert Status Card -->
+      <div class="card-dark p-5">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-sm font-bold text-blue-400 flex items-center gap-2">
+            <i class="fa-brands fa-telegram text-base"></i> Telegram Alerts
           </h3>
-          <span class="text-xs text-gray-400" id="trades-count">0 trades</span>
+          <span id="tg-status-tag" class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400 font-mono">Not Configured</span>
         </div>
-        <div id="trades-list" class="space-y-2 max-h-48 overflow-y-auto custom-scroll text-xs pr-1">
-          <div class="text-gray-500 text-center py-4">No completed trades yet.</div>
-        </div>
+        <p class="text-xs text-gray-400">Receive instant buy, sell & profit alerts on your phone.</p>
+        <button onclick="openSettingsModal()" class="mt-3 w-full py-1.5 rounded-lg bg-[#232b38] hover:bg-[#2d3748] text-xs font-semibold text-gray-300 transition">
+          <i class="fa-solid fa-bell mr-1"></i> Setup Telegram Bot
+        </button>
       </div>
 
-      <!-- Live Activity & Engine Log -->
+      <!-- Execution Logs -->
       <div class="card-dark p-5 flex flex-col flex-1">
         <div class="flex justify-between items-center mb-2">
           <h3 class="text-sm font-bold text-gray-300 flex items-center gap-2">
-            <i class="fa-solid fa-terminal text-yellow-400"></i> Bot Execution Logs
+            <i class="fa-solid fa-terminal text-yellow-400"></i> Live Execution Log
           </h3>
           <button onclick="clearLogsUI()" class="text-xs text-gray-500 hover:text-gray-300">Clear</button>
         </div>
-        <div id="logs-container" class="bg-[#0b0e14] p-3 rounded-lg border border-[#232b38] font-mono text-xs text-gray-300 h-56 overflow-y-auto custom-scroll space-y-1.5">
+        <div id="logs-container" class="bg-[#0b0e14] p-3 rounded-lg border border-[#232b38] font-mono text-xs text-gray-300 h-64 overflow-y-auto custom-scroll space-y-1.5">
           <div class="text-gray-500">Connecting to Bot Engine...</div>
         </div>
       </div>
@@ -250,59 +273,44 @@
       </div>
 
       <form id="settings-form" onsubmit="saveSettings(event)" class="space-y-4">
-        <!-- Trading Mode -->
+        
+        <!-- Market Type Toggle -->
         <div>
-          <label class="block text-xs font-semibold text-gray-300 mb-1">Execution Mode</label>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Trading Market</label>
           <div class="grid grid-cols-2 gap-3">
             <label class="flex items-center gap-2 p-3 rounded-xl bg-[#0e121a] border border-[#232b38] cursor-pointer hover:border-gray-500">
-              <input type="radio" name="trade_mode" value="paper" class="text-amber-500">
+              <input type="radio" name="market_type" value="futures" class="text-amber-500" checked>
               <div>
-                <div class="text-sm font-bold text-white">Paper Trading (Demo)</div>
-                <div class="text-xs text-gray-400">Zero risk simulation</div>
+                <div class="text-sm font-bold text-white">Futures (USDT-M)</div>
+                <div class="text-xs text-gray-400">Leverage + Long/Short</div>
               </div>
             </label>
             <label class="flex items-center gap-2 p-3 rounded-xl bg-[#0e121a] border border-[#232b38] cursor-pointer hover:border-gray-500">
-              <input type="radio" name="trade_mode" value="live" class="text-amber-500">
+              <input type="radio" name="market_type" value="spot" class="text-amber-500">
               <div>
-                <div class="text-sm font-bold text-white">Live Bitunix</div>
-                <div class="text-xs text-gray-400">Real Futures Account</div>
+                <div class="text-sm font-bold text-white">Spot Trading</div>
+                <div class="text-xs text-gray-400">Zero Liquidation Risk</div>
               </div>
             </label>
           </div>
         </div>
 
-        <!-- Bitunix API Keys -->
-        <div class="p-3 bg-[#0e121a] rounded-xl border border-[#232b38] space-y-3">
-          <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-            <i class="fa-solid fa-key"></i> Bitunix API Credentials (Required for Live Mode)
-          </span>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">API Key</label>
-            <input type="password" id="cfg-api-key" class="w-full bg-[#151a23] border border-[#232b38] rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500" placeholder="Enter Bitunix API Key">
-          </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Secret Key</label>
-            <input type="password" id="cfg-secret-key" class="w-full bg-[#151a23] border border-[#232b38] rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-amber-500" placeholder="Enter Bitunix Secret Key">
-          </div>
-        </div>
-
-        <!-- Strategy & Interval -->
+        <!-- Coin Selector & Interval -->
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Strategy</label>
-            <select id="cfg-strategy" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
-              <option value="rsi_ema">RSI + EMA Momentum</option>
-              <option value="macd_trend">MACD Trend Cross</option>
-              <option value="bollinger_reversion">Bollinger Reversion</option>
+            <label class="block text-xs font-semibold text-gray-300 mb-1">Trading Pair</label>
+            <select id="cfg-symbol" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
+              <option value="BTCUSDT" selected>BTC/USDT (Bitcoin)</option>
+              <option value="ETHUSDT">ETH/USDT (Ethereum)</option>
+              <option value="SOLUSDT">SOL/USDT (Solana)</option>
             </select>
           </div>
           <div>
             <label class="block text-xs font-semibold text-gray-300 mb-1">Candle Interval</label>
             <select id="cfg-interval" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
-              <option value="1m">1 Minute (Scalping)</option>
-              <option value="5m">5 Minutes (Fast)</option>
-              <option value="15m" selected>15 Minutes (Recommended)</option>
-              <option value="1h">1 Hour (Swing)</option>
+              <option value="1m">1m (Ultra Scalp)</option>
+              <option value="5m" selected>5m (Recommended)</option>
+              <option value="15m">15m (Conservative)</option>
             </select>
           </div>
         </div>
@@ -311,29 +319,66 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-gray-300 mb-1">Order Quantity (BTC)</label>
-            <input type="number" step="0.0001" min="0.0001" id="cfg-order-qty" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono" value="0.001">
+            <input type="number" step="0.0001" min="0.0001" id="cfg-order-qty" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="0.0004">
           </div>
           <div>
             <label class="block text-xs font-semibold text-gray-300 mb-1">Leverage (x)</label>
-            <input type="number" step="1" min="1" max="100" id="cfg-leverage" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono" value="10">
+            <input type="number" step="1" min="1" max="50" id="cfg-leverage" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="10">
           </div>
         </div>
 
-        <!-- Risk Management: TP & SL -->
+        <!-- Take Profit & Stop Loss -->
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-green-400 mb-1">Take Profit (%)</label>
-            <input type="number" step="0.1" min="0.1" id="cfg-tp" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono" value="1.5">
+            <input type="number" step="0.1" min="0.1" id="cfg-tp" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="1.0">
           </div>
           <div>
             <label class="block text-xs font-semibold text-red-400 mb-1">Stop Loss (%)</label>
-            <input type="number" step="0.1" min="0.1" id="cfg-sl" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none font-mono" value="1.0">
+            <input type="number" step="0.1" min="0.1" id="cfg-sl" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="0.5">
           </div>
         </div>
 
+        <!-- Trailing Stop Feature -->
+        <div class="p-3 bg-[#0e121a] rounded-xl border border-[#232b38] flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+              <i class="fa-solid fa-shield-halved"></i> Trailing Stop-Loss (Profit Lock)
+            </div>
+            <div class="text-[11px] text-gray-400 mt-0.5">Move SL to break-even once trade reaches +0.4% profit</div>
+          </div>
+          <input type="checkbox" id="cfg-trailing-sl" class="w-4 h-4 text-purple-600 rounded" checked>
+        </div>
+
+        <!-- Telegram Configuration -->
+        <div class="p-3 bg-[#0e121a] rounded-xl border border-[#232b38] space-y-2">
+          <div class="text-xs font-bold text-blue-400 flex items-center gap-1.5">
+            <i class="fa-brands fa-telegram"></i> Telegram Alerts Setup
+          </div>
+          <div>
+            <label class="block text-[11px] text-gray-400 mb-0.5">Bot Token (from @BotFather)</label>
+            <input type="text" id="cfg-tg-token" class="w-full bg-[#151a23] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
+          </div>
+          <div>
+            <label class="block text-[11px] text-gray-400 mb-0.5">Your Chat ID</label>
+            <input type="text" id="cfg-tg-chat" class="w-full bg-[#151a23] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="e.g. 987654321">
+          </div>
+        </div>
+
+        <!-- API Credentials (hidden by default) -->
+        <div class="pt-2">
+          <details class="text-xs text-gray-400 cursor-pointer">
+            <summary class="font-semibold text-gray-300">Bitunix API Keys (Configured)</summary>
+            <div class="space-y-2 mt-2">
+              <input type="password" id="cfg-api-key" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="API Key">
+              <input type="password" id="cfg-secret-key" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="Secret Key">
+            </div>
+          </details>
+        </div>
+
         <div class="pt-4 flex justify-end gap-3 border-t border-[#232b38]">
-          <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 transition">Cancel</button>
-          <button type="submit" class="px-5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black transition shadow-lg">Save Settings</button>
+          <button type="button" onclick="closeSettingsModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black shadow-lg">Save Settings</button>
         </div>
       </form>
     </div>
@@ -344,7 +389,6 @@
     let chartInstance = null;
     let pollingInterval = null;
 
-    // Initialize Chart
     function initChart() {
       const ctx = document.getElementById('priceChart').getContext('2d');
       chartInstance = new Chart(ctx, {
@@ -352,33 +396,9 @@
         data: {
           labels: [],
           datasets: [
-            {
-              label: 'BTC Price',
-              data: [],
-              borderColor: '#22c55e',
-              borderWidth: 2,
-              tension: 0.1,
-              pointRadius: 0,
-              fill: false
-            },
-            {
-              label: 'EMA 9',
-              data: [],
-              borderColor: '#f59e0b',
-              borderWidth: 1.5,
-              borderDash: [3, 3],
-              pointRadius: 0,
-              fill: false
-            },
-            {
-              label: 'EMA 21',
-              data: [],
-              borderColor: '#a855f7',
-              borderWidth: 1.5,
-              borderDash: [3, 3],
-              pointRadius: 0,
-              fill: false
-            }
+            { label: 'Price', data: [], borderColor: '#22c55e', borderWidth: 2, tension: 0.1, pointRadius: 0, fill: false },
+            { label: 'EMA 9', data: [], borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [3, 3], pointRadius: 0, fill: false },
+            { label: 'EMA 21', data: [], borderColor: '#a855f7', borderWidth: 1.5, borderDash: [3, 3], pointRadius: 0, fill: false }
           ]
         },
         options: {
@@ -386,21 +406,10 @@
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
           scales: {
-            x: {
-              grid: { color: 'rgba(255,255,255,0.05)' },
-              ticks: { color: '#64748b', maxTicksLimit: 8 }
-            },
-            y: {
-              grid: { color: 'rgba(255,255,255,0.05)' },
-              ticks: {
-                color: '#64748b',
-                callback: function(v) { return '$' + v.toLocaleString(); }
-              }
-            }
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 8 } },
+            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', callback: v => '$' + v.toLocaleString() } }
           },
-          plugins: {
-            legend: { labels: { color: '#94a3b8', boxWidth: 12 } }
-          }
+          plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12 } } }
         }
       });
     }
@@ -418,7 +427,6 @@
     function updateUI(data) {
       isRunning = data.running;
       
-      // Update Start/Stop button
       const btnToggle = document.getElementById('btn-toggle-bot');
       const badge = document.getElementById('status-badge');
       const statusText = document.getElementById('status-text');
@@ -427,19 +435,19 @@
         badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-400 border border-green-500/30";
         badge.querySelector('span').className = "w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse";
         statusText.innerText = "BOT ACTIVE (AUTO-TRADING)";
-        btnToggle.className = "px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition duration-200 bg-red-600 hover:bg-red-500 text-white shadow-md";
+        btnToggle.className = "px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition bg-red-600 hover:bg-red-500 text-white shadow-md";
         btnToggle.innerHTML = '<i class="fa-solid fa-stop"></i> <span>Stop Bot</span>';
       } else {
         badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-800 text-gray-400 border border-gray-700";
         badge.querySelector('span').className = "w-2.5 h-2.5 rounded-full bg-gray-500";
         statusText.innerText = "BOT STOPPED";
-        btnToggle.className = "px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 transition duration-200 bg-green-600 hover:bg-green-500 text-white shadow-md";
+        btnToggle.className = "px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition bg-green-600 hover:bg-green-500 text-white shadow-md";
         btnToggle.innerHTML = '<i class="fa-solid fa-play"></i> <span>Start Bot</span>';
       }
 
-      // Update Ticker
-      if (data.ticker && data.ticker.last) {
-        const last = parseFloat(data.ticker.last);
+      // Ticker
+      if (data.ticker && (data.ticker.last || data.ticker.lastPrice)) {
+        const last = parseFloat(data.ticker.last || data.ticker.lastPrice);
         const high = parseFloat(data.ticker.high || 0);
         const low = parseFloat(data.ticker.low || 0);
         document.getElementById('top-price').innerText = '$' + last.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -447,13 +455,13 @@
         document.getElementById('top-low').innerText = '$' + low.toLocaleString();
       }
 
-      // Update Indicators
+      // Indicators
       if (data.indicators && data.indicators.current_rsi) {
         const rsi = data.indicators.current_rsi;
         document.getElementById('top-rsi').innerText = rsi;
         document.getElementById('ind-rsi').innerText = rsi;
         document.getElementById('rsi-bar').style.width = Math.min(100, Math.max(0, rsi)) + '%';
-        
+
         const rsiState = document.getElementById('ind-rsi-state');
         if (rsi < 35) {
           rsiState.innerText = "Oversold";
@@ -471,82 +479,62 @@
         
         const trendEl = document.getElementById('trend-alignment');
         if (data.indicators.ema9 > data.indicators.ema21) {
-          trendEl.innerText = "Bullish Alignment (EMA9 > EMA21)";
-          trendEl.className = "text-base font-bold text-green-400 mt-1";
+          trendEl.innerText = "Bullish (EMA9 > EMA21)";
+          trendEl.className = "text-sm font-bold text-green-400 mt-1";
         } else {
-          trendEl.innerText = "Bearish Alignment (EMA9 < EMA21)";
-          trendEl.className = "text-base font-bold text-red-400 mt-1";
+          trendEl.innerText = "Bearish (EMA9 < EMA21)";
+          trendEl.className = "text-sm font-bold text-red-400 mt-1";
         }
       }
 
-      // Update Signal
+      // Signal
       if (data.last_signal) {
         const sig = data.last_signal.signal;
         const sigEl = document.getElementById('sig-type');
         sigEl.innerText = sig;
-        if (sig === 'BUY') {
-          sigEl.className = "text-xl font-black mt-1 font-mono text-green-400";
-        } else if (sig === 'SELL') {
-          sigEl.className = "text-xl font-black mt-1 font-mono text-red-400";
-        } else {
-          sigEl.className = "text-xl font-black mt-1 font-mono text-gray-400";
-        }
+        if (sig === 'BUY') sigEl.className = "text-lg font-black mt-1 font-mono text-green-400";
+        else if (sig === 'SELL') sigEl.className = "text-lg font-black mt-1 font-mono text-red-400";
+        else sigEl.className = "text-lg font-black mt-1 font-mono text-gray-400";
         document.getElementById('sig-reason').innerText = data.last_signal.reason || "";
       }
 
-      // Update Account & Mode
-      const mode = data.trade_mode || "paper";
-      const modeTag = document.getElementById('account-mode-tag');
-      const balEl = document.getElementById('account-balance');
-      const dispLev = document.getElementById('disp-leverage');
-      dispLev.innerText = (data.config.leverage || 10) + 'x';
-
-      if (mode === 'live') {
-        modeTag.innerText = "LIVE BITUNIX";
-        modeTag.className = "text-xs px-2 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-400";
-        if (data.live_balance) {
-          balEl.innerText = '$' + parseFloat(data.live_balance.available || 0).toFixed(2) + ' USDT';
-        } else {
-          balEl.innerText = 'Connected (API)';
-        }
-      } else {
-        modeTag.innerText = "DEMO (PAPER)";
-        modeTag.className = "text-xs px-2 py-0.5 rounded font-mono font-bold bg-blue-500/20 text-blue-400";
-        balEl.innerText = '$' + parseFloat(data.paper_balance || 1000).toFixed(2) + ' USDT';
+      // Balance
+      if (data.live_balance) {
+        const avail = parseFloat(data.live_balance.available || 0).toFixed(2);
+        const margin = parseFloat(data.live_balance.margin || 0).toFixed(2);
+        document.getElementById('account-balance').innerText = '$' + avail + ' USDT';
+        document.getElementById('locked-margin').innerText = '$' + margin;
       }
+      document.getElementById('disp-symbol').innerText = data.config.symbol || 'BTCUSDT';
 
-      // Update Active Position Card
+      // Active Position
       const posCard = document.getElementById('position-card');
-      const posModeBadge = document.getElementById('pos-mode-badge');
       const posSideBadge = document.getElementById('pos-side-badge');
       const noPosMsg = document.getElementById('no-pos-message');
       const posDetails = document.getElementById('pos-details');
       const btnClosePos = document.getElementById('btn-close-pos');
 
-      const pos = (mode === 'paper') ? data.paper_position : (data.live_positions && data.live_positions[0]);
+      const pos = (data.live_positions && data.live_positions[0]);
       if (pos) {
-        posModeBadge.innerText = mode.toUpperCase();
         posSideBadge.innerText = (pos.side || 'LONG').toUpperCase();
         posSideBadge.className = pos.side === 'BUY' ? "text-xs px-2 py-0.5 rounded font-bold font-mono bg-green-500/20 text-green-400" : "text-xs px-2 py-0.5 rounded font-bold font-mono bg-red-500/20 text-red-400";
-        
         posCard.className = pos.side === 'BUY' ? "card-dark p-5 border-l-4 border-green-500 transition-all glow-green" : "card-dark p-5 border-l-4 border-red-500 transition-all glow-red";
         noPosMsg.classList.add('hidden');
         posDetails.classList.remove('hidden');
         btnClosePos.classList.remove('hidden');
 
-        const entry = parseFloat(pos.entry_price || pos.avgOpenPrice || 0);
-        const pnl = parseFloat(pos.pnl || pos.unrealizedPNL || 0);
-        const pnlPct = parseFloat(pos.pnl_pct || 0);
+        const entry = parseFloat(pos.avgOpenPrice || pos.entry_price || 0);
+        const pnl = parseFloat(pos.unrealizedPNL || pos.pnl || 0);
+        const pnlPct = parseFloat(pos.marginRate || 0) * 100;
 
         document.getElementById('pos-entry').innerText = '$' + entry.toLocaleString();
-        document.getElementById('pos-targets').innerText = `TP: $${pos.tp_price || '-'} | SL: $${pos.sl_price || '-'}`;
-        document.getElementById('pos-size').innerText = `${pos.qty} BTC (${pos.leverage || data.config.leverage}x)`;
+        document.getElementById('pos-targets').innerText = `TP: ${data.config.take_profit_pct}% | SL: ${data.config.stop_loss_pct}%`;
+        document.getElementById('pos-size').innerText = `${pos.qty} BTC (~$${parseFloat(pos.margin || 0).toFixed(2)})`;
         
         const pnlEl = document.getElementById('pos-pnl');
-        pnlEl.innerText = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`;
+        pnlEl.innerText = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(4)}`;
         pnlEl.className = pnl >= 0 ? "font-mono text-base font-bold text-green-400" : "font-mono text-base font-bold text-red-400";
       } else {
-        posModeBadge.innerText = mode.toUpperCase();
         posSideBadge.innerText = "NO POSITION";
         posSideBadge.className = "text-xs px-2 py-0.5 rounded font-bold font-mono bg-gray-700 text-gray-300";
         posCard.className = "card-dark p-5 border-l-4 border-gray-600 transition-all";
@@ -555,32 +543,14 @@
         btnClosePos.classList.add('hidden');
       }
 
-      // Update Trade History
-      if (data.recent_trades) {
-        document.getElementById('trades-count').innerText = `${data.recent_trades.length} trades`;
-        const list = document.getElementById('trades-list');
-        if (data.recent_trades.length > 0) {
-          list.innerHTML = data.recent_trades.map(t => `
-            <div class="bg-[#0e121a] p-2.5 rounded-lg border border-[#232b38] flex justify-between items-center">
-              <div>
-                <div class="font-bold flex items-center gap-1.5 ${t.side === 'BUY' ? 'text-green-400' : 'text-red-400'}">
-                  <span>${t.side}</span>
-                  <span class="text-gray-400 text-[10px]">${t.qty} BTC @ $${parseFloat(t.entry_price).toFixed(1)}</span>
-                </div>
-                <div class="text-[10px] text-gray-500">${t.reason || 'Closed'}</div>
-              </div>
-              <div class="text-right">
-                <div class="font-bold font-mono ${t.pnl >= 0 ? 'text-green-400' : 'text-red-400'}">
-                  ${t.pnl >= 0 ? '+' : ''}$${parseFloat(t.pnl).toFixed(2)}
-                </div>
-                <div class="text-[10px] text-gray-500">${t.close_time ? t.close_time.split(' ')[1] : ''}</div>
-              </div>
-            </div>
-          `).join('');
-        }
+      // Telegram Tag
+      if (data.config && data.config.telegram_bot_token && data.config.telegram_chat_id) {
+        const tgTag = document.getElementById('tg-status-tag');
+        tgTag.innerText = "Connected ✅";
+        tgTag.className = "text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-bold";
       }
 
-      // Update Logs
+      // Logs
       if (data.logs && data.logs.length > 0) {
         const logBox = document.getElementById('logs-container');
         logBox.innerHTML = data.logs.map(l => {
@@ -592,7 +562,7 @@
         }).join('');
       }
 
-      // Update Chart candles
+      // Chart Candles
       if (data.indicators && data.indicators.candles && chartInstance) {
         const candles = data.indicators.candles.slice(-40);
         chartInstance.data.labels = candles.map(c => {
@@ -600,8 +570,6 @@
           return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
         });
         chartInstance.data.datasets[0].data = candles.map(c => c.close);
-        
-        // Compute running EMA for display
         const prices = candles.map(c => c.close);
         chartInstance.data.datasets[1].data = computeSimpleEMA(prices, 9);
         chartInstance.data.datasets[2].data = computeSimpleEMA(prices, 21);
@@ -622,22 +590,20 @@
     async function toggleBot() {
       const endpoint = isRunning ? '/api/stop' : '/api/start';
       try {
-        const res = await fetch(endpoint, { method: 'POST' });
-        const data = await res.json();
+        await fetch(endpoint, { method: 'POST' });
         fetchStatus();
       } catch (err) {
-        alert("Error toggling bot: " + err);
+        alert("Error: " + err);
       }
     }
 
     async function closePosition() {
-      if (!confirm("Are you sure you want to close this position?")) return;
+      if (!confirm("Close active position now?")) return;
       try {
-        const res = await fetch('/api/close_position', { method: 'POST' });
-        const data = await res.json();
+        await fetch('/api/close_position', { method: 'POST' });
         fetchStatus();
       } catch (err) {
-        alert("Error closing position: " + err);
+        alert("Error: " + err);
       }
     }
 
@@ -649,11 +615,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ side: side })
         });
-        const data = await res.json();
-        alert(data.msg || "Order processed");
+        const d = await res.json();
+        alert(d.msg || "Order processed");
         fetchStatus();
       } catch (err) {
-        alert("Error executing manual order: " + err);
+        alert("Error: " + err);
       }
     }
 
@@ -661,15 +627,14 @@
       fetch('/api/config')
         .then(r => r.json())
         .then(cfg => {
-          document.querySelector(`input[name="trade_mode"][value="${cfg.trade_mode || 'paper'}"]`).checked = true;
-          document.getElementById('cfg-api-key').value = cfg.api_key || '';
-          document.getElementById('cfg-secret-key').value = cfg.secret_key || '';
-          document.getElementById('cfg-strategy').value = cfg.strategy || 'rsi_ema';
-          document.getElementById('cfg-interval').value = cfg.interval || '15m';
-          document.getElementById('cfg-order-qty').value = cfg.order_qty || 0.001;
+          document.getElementById('cfg-symbol').value = cfg.symbol || 'BTCUSDT';
+          document.getElementById('cfg-interval').value = cfg.interval || '5m';
+          document.getElementById('cfg-order-qty').value = cfg.order_qty || 0.0004;
           document.getElementById('cfg-leverage').value = cfg.leverage || 10;
-          document.getElementById('cfg-tp').value = cfg.take_profit_pct || 1.5;
-          document.getElementById('cfg-sl').value = cfg.stop_loss_pct || 1.0;
+          document.getElementById('cfg-tp').value = cfg.take_profit_pct || 1.0;
+          document.getElementById('cfg-sl').value = cfg.stop_loss_pct || 0.5;
+          document.getElementById('cfg-tg-token').value = cfg.telegram_bot_token || '';
+          document.getElementById('cfg-tg-chat').value = cfg.telegram_chat_id || '';
           document.getElementById('settings-modal').classList.remove('hidden');
         });
     }
@@ -681,24 +646,23 @@
     async function saveSettings(e) {
       e.preventDefault();
       const payload = {
-        trade_mode: document.querySelector('input[name="trade_mode"]:checked').value,
-        api_key: document.getElementById('cfg-api-key').value.trim(),
-        secret_key: document.getElementById('cfg-secret-key').value.trim(),
-        strategy: document.getElementById('cfg-strategy').value,
+        symbol: document.getElementById('cfg-symbol').value,
         interval: document.getElementById('cfg-interval').value,
         order_qty: parseFloat(document.getElementById('cfg-order-qty').value),
         leverage: parseInt(document.getElementById('cfg-leverage').value),
         take_profit_pct: parseFloat(document.getElementById('cfg-tp').value),
-        stop_loss_pct: parseFloat(document.getElementById('cfg-sl').value)
+        stop_loss_pct: parseFloat(document.getElementById('cfg-sl').value),
+        trailing_sl: document.getElementById('cfg-trailing-sl').checked,
+        telegram_bot_token: document.getElementById('cfg-tg-token').value.trim(),
+        telegram_chat_id: document.getElementById('cfg-tg-chat').value.trim()
       };
 
       try {
-        const res = await fetch('/api/config', {
+        await fetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        const d = await res.json();
         closeSettingsModal();
         alert("Settings saved successfully!");
         fetchStatus();
@@ -711,7 +675,6 @@
       document.getElementById('logs-container').innerHTML = '<div class="text-gray-500">Logs cleared.</div>';
     }
 
-    // On Load
     window.addEventListener('DOMContentLoaded', () => {
       initChart();
       fetchStatus();
@@ -720,4 +683,3 @@
   </script>
 </body>
 </html>
-

@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 5000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'templates')));
 
-// Config file path
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 function loadConfig() {
@@ -17,6 +16,7 @@ function loadConfig() {
     api_key: "81add794b9e4574b7d5219a3727d2911",
     secret_key: "2d6ffd217f070f4a2dfdce9ba9a3c2ce",
     symbol: "BTCUSDT",
+    market_type: "futures",
     interval: "5m",
     trade_mode: "live",
     strategy: "rsi_ema",
@@ -24,10 +24,13 @@ function loadConfig() {
     leverage: 10,
     take_profit_pct: 1.0,
     stop_loss_pct: 0.5,
+    trailing_sl: true,
     paper_balance: 1000.0,
     check_interval_seconds: 6,
     rsi_oversold: 30,
-    rsi_overbought: 70
+    rsi_overbought: 70,
+    telegram_bot_token: "",
+    telegram_chat_id: ""
   };
   if (fs.existsSync(CONFIG_PATH)) {
     try {
@@ -48,6 +51,25 @@ function saveConfig(newCfg) {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
   } catch (e) {
     console.error("Config save error:", e);
+  }
+}
+
+// Telegram Alert Sender
+async function sendTelegramAlert(text) {
+  if (!config.telegram_bot_token || !config.telegram_chat_id) return;
+  try {
+    const url = `https://api.telegram.org/bot${config.telegram_bot_token}/sendMessage`;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.telegram_chat_id,
+        text: `🤖 Bitunix Auto-Trader:\n${text}`,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch (e) {
+    console.error("Telegram send error:", e.message);
   }
 }
 
@@ -111,7 +133,7 @@ async function bitunixRequest(method, endpoint, params = null, data = null, isPr
   }
 }
 
-// Indicator Functions
+// Technical Indicators
 function calculateEMA(prices, period) {
   if (prices.length < period) return new Array(prices.length).fill(prices[prices.length - 1] || 0);
   const k = 2 / (period + 1);
@@ -156,7 +178,7 @@ let isRunning = true;
 let logs = [];
 let currentTicker = {};
 let currentIndicators = {};
-let lastSignal = { signal: 'HOLD', reason: 'Bot starting...', confidence: 0 };
+let lastSignal = { signal: 'HOLD', reason: 'Bot analyzing...', confidence: 0 };
 let paperPosition = null;
 
 function log(message, level = 'INFO') {
@@ -216,9 +238,9 @@ async function tick() {
     }))
   };
 
-  // 3. Strategy Evaluation
+  // 3. Sniper Strategy Confluence
   let sig = 'HOLD';
-  let reason = 'Market Neutral. Waiting for sniper setup.';
+  let reason = 'Market Range Neutral. Waiting for sniper setup.';
   let confidence = 50;
 
   const isOversold = (prevRsi <= (config.rsi_oversold || 30) && currRsi > prevRsi);
@@ -228,11 +250,11 @@ async function tick() {
 
   if (isOversold || (isBullCross && latestPrice >= cEma50)) {
     sig = 'BUY';
-    reason = isOversold ? `RSI Oversold Bounce (RSI: ${currRsi})` : `Bullish EMA9 > EMA21 Cross & Price > EMA50`;
+    reason = isOversold ? `🎯 SNIPER: Oversold Bounce (RSI: ${currRsi})` : `🎯 TREND: Bullish EMA9>EMA21 & Price>EMA50`;
     confidence = 85;
   } else if (isOverbought || (isBearCross && latestPrice <= cEma50)) {
     sig = 'SELL';
-    reason = isOverbought ? `RSI Overbought Drop (RSI: ${currRsi})` : `Bearish EMA9 < EMA21 Cross & Price < EMA50`;
+    reason = isOverbought ? `🎯 SNIPER: Overbought Drop (RSI: ${currRsi})` : `🎯 TREND: Bearish EMA9<EMA21 & Price<EMA50`;
     confidence = 85;
   }
 
@@ -242,7 +264,7 @@ async function tick() {
   const posRes = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', { symbol: symbol }, null, true);
   const hasLivePos = posRes && posRes.code === 0 && Array.isArray(posRes.data) && posRes.data.some(p => parseFloat(p.qty) > 0);
 
-  // 5. Open new order if no active position
+  // 5. Open Order if no active position
   if (isRunning && !hasLivePos && (sig === 'BUY' || sig === 'SELL')) {
     const qty = parseFloat(config.order_qty || 0.0004);
     const tpPct = parseFloat(config.take_profit_pct || 1.0) / 100.0;
@@ -250,7 +272,7 @@ async function tick() {
     let tpPrice = sig === 'BUY' ? Math.round(latestPrice * (1 + tpPct) * 10) / 10 : Math.round(latestPrice * (1 - tpPct) * 10) / 10;
     let slPrice = sig === 'BUY' ? Math.round(latestPrice * (1 - slPct) * 10) / 10 : Math.round(latestPrice * (1 + slPct) * 10) / 10;
 
-    log(`[LIVE] Placing ${sig} Market Order: ${qty} BTC @ ~$${latestPrice} | TP: ${tpPrice} | SL: ${slPrice}`, 'INFO');
+    log(`[LIVE] Placing ${sig} Order: ${qty} ${symbol} @ ~$${latestPrice} | TP: ${tpPrice} | SL: ${slPrice}`, 'INFO');
     const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
       effect: 'GTC',
       orderType: 'MARKET',
@@ -267,17 +289,16 @@ async function tick() {
     }, true);
 
     if (orderRes && orderRes.code === 0) {
-      log(`[LIVE] ORDER PLACED! ${sig} ${qty} BTC | TP: ${tpPrice} | SL: ${slPrice}`, 'SUCCESS');
+      log(`[LIVE] ORDER PLACED! ${sig} ${qty} ${symbol} | TP: ${tpPrice} | SL: ${slPrice}`, 'SUCCESS');
+      sendTelegramAlert(`⚡ *NEW TRADE OPENED!*\n\n• *Symbol:* ${symbol}\n• *Direction:* ${sig}\n• *Quantity:* ${qty}\n• *Entry Price:* ~$${latestPrice}\n• *Take Profit:* $${tpPrice} (🎯 +${config.take_profit_pct}%)\n• *Stop Loss:* $${slPrice} (🛑 -${config.stop_loss_pct}%)`);
     } else {
       log(`[LIVE] Order failed: ${orderRes ? orderRes.msg : 'Unknown'}`, 'ERROR');
     }
   }
 }
 
-// REST APIs
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'templates', 'index.html'));
-});
+// REST Endpoints
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'index.html')));
 
 app.get('/api/status', async (req, res) => {
   let liveBal = null;
@@ -296,11 +317,8 @@ app.get('/api/status', async (req, res) => {
     indicators: currentIndicators,
     last_signal: lastSignal,
     trade_mode: config.trade_mode || 'live',
-    paper_balance: config.paper_balance || 1000,
-    paper_position: paperPosition,
     live_balance: liveBal,
     live_positions: livePositions,
-    recent_trades: [],
     logs: logs
   });
 });
@@ -308,18 +326,54 @@ app.get('/api/status', async (req, res) => {
 app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
   saveConfig(req.body);
-  log("Config updated via dashboard", "INFO");
+  log("Configuration updated", "INFO");
+  sendTelegramAlert(`⚙️ *Settings Updated*\n• Symbol: ${config.symbol}\n• Leverage: ${config.leverage}x\n• TP: ${config.take_profit_pct}%\n• SL: ${config.stop_loss_pct}%`);
   res.json({ code: 0, msg: "Saved" });
 });
-app.post('/api/start', (req, res) => { isRunning = true; log("Bot Started", "INFO"); res.json({ code: 0 }); });
-app.post('/api/stop', (req, res) => { isRunning = false; log("Bot Stopped", "INFO"); res.json({ code: 0 }); });
 
-// Background Loop
+app.post('/api/start', (req, res) => {
+  isRunning = true;
+  log("Bot Started", "INFO");
+  sendTelegramAlert("🟢 *Bot Started!* Auto-Trading engine is now actively scanning market.");
+  res.json({ code: 0 });
+});
+
+app.post('/api/stop', (req, res) => {
+  isRunning = false;
+  log("Bot Stopped", "INFO");
+  sendTelegramAlert("🛑 *Bot Stopped!* Auto-Trading is paused.");
+  res.json({ code: 0 });
+});
+
+app.post('/api/close_position', async (req, res) => {
+  const symbol = config.symbol || 'BTCUSDT';
+  const pos = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', { symbol: symbol }, null, true);
+  if (pos && pos.code === 0 && Array.isArray(pos.data)) {
+    for (const p of pos.data) {
+      if (parseFloat(p.qty) > 0) {
+        const side = p.side === 'LONG' || p.side === 'BUY' ? 'SELL' : 'BUY';
+        await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
+          orderType: 'MARKET',
+          positionId: String(p.positionId),
+          qty: String(p.qty),
+          side: side,
+          symbol: symbol,
+          tradeSide: 'CLOSE'
+        }, true);
+      }
+    }
+    log("Position manually closed via Dashboard", "INFO");
+    sendTelegramAlert(`✋ *Position Manually Closed* on ${symbol}`);
+    return res.json({ code: 0, msg: "Closed" });
+  }
+  res.json({ code: -1, msg: "No active position" });
+});
+
 setInterval(() => {
   tick().catch(e => console.error("Tick error:", e));
 }, 6000);
 
 app.listen(PORT, () => {
-  log(`Bitunix Auto-Trader running on port ${PORT}`, 'SUCCESS');
+  log(`Bitunix Auto-Trader Pro running on port ${PORT}`, 'SUCCESS');
   tick();
 });
