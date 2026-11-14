@@ -525,7 +525,7 @@ app.get('/api/config', (req, res) => res.json(config));
 app.post('/api/config', (req, res) => {
   saveConfig(req.body);
   log("Configuration updated", "INFO");
-  sendTelegramAlert(`⚙️ *Settings Updated*\n• Mode: Dynamic Uncapped Profit Runner\n• Fixed SL: -${config.fixed_stop_loss_pct}%\n• Multi-Coin: ${config.multi_coin_mode ? 'ON' : 'OFF'}\n• Spot Auto: ${config.spot_auto_mode ? 'ON' : 'OFF'}`);
+  sendTelegramAlert(`⚙️ *Strategy Settings Updated*\n\n• *Mode:* Dynamic Uncapped Profit Runner 🚀\n• *TP (Take Profit):* Open / No 1% Limit (Runs as far as trend goes!)\n• *SL (Stop Loss):* -${config.fixed_stop_loss_pct}% (Strict Tiny Loss Cut)\n• *Multi-Coin Scanner:* ${config.multi_coin_mode ? 'ACTIVE (5 Coins)' : 'OFF'}\n• *Spot Dip-Buyer:* ${config.spot_auto_mode ? 'ACTIVE' : 'OFF'}`);
   res.json({ code: 0, msg: "Saved" });
 });
 
