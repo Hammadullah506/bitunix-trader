@@ -255,22 +255,23 @@ async function futuresTick() {
 
       const isOversold = (prevRsi <= (config.rsi_oversold || 30) && currRsi > prevRsi);
       const isOverbought = (prevRsi >= (config.rsi_overbought || 70) && currRsi < prevRsi);
-      const isBullCross = (cEma9 > cEma21 && currRsi >= 42 && currRsi <= 58 && latestPrice >= cEma50);
-      const isBearCross = (cEma9 < cEma21 && currRsi <= 58 && currRsi >= 42 && latestPrice <= cEma50);
+      const isBullCross = (cEma9 > cEma21 && currRsi >= 42 && currRsi <= 60 && latestPrice >= cEma50);
+      const isBearCross = (cEma9 < cEma21 && currRsi <= 56 && currRsi >= 40 && latestPrice <= cEma50);
 
-      if (isOversold) {
+      // Strict Anti-Trap Filters: Never BUY near overbought peak, never SHORT near oversold bottom
+      if (isOversold && currRsi <= 35) {
         sig = 'BUY';
         reason = `Oversold Reversal (RSI: ${currRsi})`;
         confidence = 90;
-      } else if (isOverbought) {
+      } else if (isOverbought && currRsi >= 65) {
         sig = 'SELL';
         reason = `Overbought Drop (RSI: ${currRsi})`;
         confidence = 90;
-      } else if (isBullCross) {
+      } else if (isBullCross && currRsi < 62) {
         sig = 'BUY';
         reason = `Bullish Trend (EMA9>21 & Price>EMA50)`;
         confidence = 80;
-      } else if (isBearCross) {
+      } else if (isBearCross && currRsi > 38) {
         sig = 'SELL';
         reason = `Bearish Trend (EMA9<21 & Price<EMA50)`;
         confidence = 80;
@@ -363,65 +364,85 @@ async function futuresTick() {
     }
   }
 
-  // Strategic Dynamic Profit Runner & Strict Loss Protection
+  // Strategic Dynamic Profit Runner & Strict Loss Protection (Using Real Exchange PnL)
   for (const pos of activePositions) {
     const posId = String(pos.positionId);
     const entryPrice = parseFloat(pos.avgOpenPrice || 0);
-    const currPrice = multiCoinScanner[pos.symbol] ? multiCoinScanner[pos.symbol].price : entryPrice;
-    const isLong = (pos.side === 'BUY' || pos.side === 'LONG');
-    
-    const priceDiffPct = isLong 
-      ? ((currPrice - entryPrice) / entryPrice) * 100 
-      : ((entryPrice - currPrice) / entryPrice) * 100;
-    
-    const leveragedPnlPct = priceDiffPct * parseFloat(pos.leverage || config.leverage || 10);
     const pnlUsd = parseFloat(pos.unrealizedPNL || 0);
+    const marginUsd = parseFloat(pos.margin || 1.8);
+    const actualPnlPct = marginUsd > 0 ? (pnlUsd / marginUsd) * 100 : 0; // Leveraged PnL %
 
     if (!positionTrackers[posId]) {
       positionTrackers[posId] = {
         symbol: pos.symbol,
         entryPrice: entryPrice,
         side: pos.side,
-        maxPnlPct: leveragedPnlPct,
+        maxPnlUsd: pnlUsd,
+        maxPnlPct: actualPnlPct,
         notifiedRide: false,
-        closedNotified: false
+        closedNotified: false,
+        profitTargetHitTime: null  // 1% confirmation timer
       };
     }
 
     const tracker = positionTrackers[posId];
-    if (leveragedPnlPct > tracker.maxPnlPct) {
-      tracker.maxPnlPct = leveragedPnlPct;
+    if (pnlUsd > tracker.maxPnlUsd) {
+      tracker.maxPnlUsd = pnlUsd;
+      tracker.maxPnlPct = actualPnlPct;
     }
 
-    // 1. Strict Fixed Loss Cut (-0.5% limit)
-    const fixedSlPct = parseFloat(config.fixed_stop_loss_pct || 0.5);
-    if (priceDiffPct <= -fixedSlPct) {
-      log(`[STRICT SL CUT] ${pos.symbol} reached -${fixedSlPct}%! Exiting immediately...`, 'WARNING');
+    // 1. Strict Real Loss Protection: Cut only on genuine -$0.09 USDT (or -5% margin loss)
+    if (pnlUsd <= -0.09 || actualPnlPct <= -5.0) {
+      log(`[STRICT SL CUT] ${pos.symbol} hit actual -$${Math.abs(pnlUsd).toFixed(4)} USDT loss! Exiting...`, 'WARNING');
       tracker.closedNotified = true;
       await closeSpecificPosition(pos);
       delete positionTrackers[posId];
-      sendTelegramAlert(`🛑 *FIXED STOP LOSS CUT*\n\n• *Symbol:* ${pos.symbol}\n• *Reason:* Hit strict -${fixedSlPct}% limit\n• *Closed Loss:* -$${Math.abs(pnlUsd).toFixed(4)} USDT\n\n_Capital preserved._`);
+      sendTelegramAlert(`🛑 *FIXED STOP LOSS CUT*\n\n• *Symbol:* ${pos.symbol}\n• *Reason:* Real exchange loss limit reached\n• *Closed Loss:* -$${Math.abs(pnlUsd).toFixed(4)} USDT\n\n_Capital preserved._`);
       continue;
     }
 
-    // 2. Fast Scalping + Dynamic Profit Runner (Lock quick small gains or let runners fly)
-    if (priceDiffPct >= 0.35) {
-      if (priceDiffPct >= 0.8 && !tracker.notifiedRide) {
-        tracker.notifiedRide = true;
-        sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Status:* Profit is uncapped — letting winner run higher! 📈`);
-      }
-
-      // Fast rotation threshold: If trade hits +0.35% - +0.6% and pulls back 0.15%, lock it quickly!
-      const dropThreshold = priceDiffPct >= 0.8 ? 0.25 : 0.15;
-      const peakPriceDrop = (tracker.maxPnlPct - leveragedPnlPct) / parseFloat(pos.leverage || 10);
-
-      if (peakPriceDrop >= dropThreshold && pnlUsd > 0.01) {
-        log(`[QUICK SCALP PROFIT] ${pos.symbol} locked +$${pnlUsd.toFixed(4)} USDT (+${priceDiffPct.toFixed(2)}%). Rotating to next setup!`, 'SUCCESS');
+    // 2. 1% Profit Target — 5 Second Confirmation Close Rule
+    if (actualPnlPct >= 1.0) {
+      if (!tracker.profitTargetHitTime) {
+        tracker.profitTargetHitTime = Date.now();
+        log(`[1% TARGET HIT] ${pos.symbol} reached +${actualPnlPct.toFixed(2)}% profit — waiting 5s to confirm stability...`, 'INFO');
+      } else if (Date.now() - tracker.profitTargetHitTime >= 5000) {
+        // 5 seconds passed and profit still >= 1% — LOCK IT NOW!
+        log(`[PROFIT LOCK] ${pos.symbol} confirmed +${actualPnlPct.toFixed(2)}% after 5s check — closing for profit!`, 'SUCCESS');
         tracker.closedNotified = true;
         await closeSpecificPosition(pos);
         totalRealizedProfitToday += pnlUsd;
         delete positionTrackers[posId];
-        sendTelegramAlert(`💰 *QUICK SCALP PROFIT LOCKED!*\n\n• *Symbol:* ${pos.symbol}\n• *Net Gain:* +${priceDiffPct.toFixed(2)}% (+$${pnlUsd.toFixed(4)} USDT)\n• *Action:* Profit secured quickly — rotating to next sniper trade!\n\n_Cash safe in wallet!_`);
+        sendTelegramAlert(`💰 *1% PROFIT LOCKED!*\n\n• *Coin:* ${pos.symbol}\n• *Profit:* +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(2)}% ROI)\n• *Check:* 5s stability confirmed ✅\n• *Entry:* ~$${entryPrice}\n\n_Rotating to next sniper setup!_ 🎯`);
+        continue;
+      }
+    } else {
+      // Profit dropped below 1% — reset the confirmation timer
+      if (tracker.profitTargetHitTime) {
+        log(`[1% RESET] ${pos.symbol} dropped below 1% (now ${actualPnlPct.toFixed(2)}%) — timer reset, waiting again...`, 'INFO');
+      }
+      tracker.profitTargetHitTime = null;
+    }
+
+    // 3. Deep Trailing Runner (for positions that spike past 2.5% — bonus catcher)
+    if (pnlUsd >= 0.04 || actualPnlPct >= 2.5) {
+      if (actualPnlPct >= 8.0 && !tracker.notifiedRide) {
+        tracker.notifiedRide = true;
+        sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(1)}%)\n• *Status:* Profit is uncapped — letting winner run higher! 📈`);
+      }
+
+      // Trailing lock: If profit pulls back from peak by more than $0.02, secure it!
+      const peakDropUsd = tracker.maxPnlUsd - pnlUsd;
+      const isRunner = actualPnlPct >= 8.0;
+      const allowableDrop = isRunner ? Math.max(0.04, tracker.maxPnlUsd * 0.25) : 0.02;
+
+      if (peakDropUsd >= allowableDrop && pnlUsd >= 0.03) {
+        log(`[TRAILING LOCK] ${pos.symbol} trailing profit locked +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(1)}% ROI). Rotating!`, 'SUCCESS');
+        tracker.closedNotified = true;
+        await closeSpecificPosition(pos);
+        totalRealizedProfitToday += pnlUsd;
+        delete positionTrackers[posId];
+        sendTelegramAlert(`💰 *TRAILING PROFIT LOCKED!*\n\n• *Symbol:* ${pos.symbol}\n• *Profit:* +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(1)}% ROI) 💵\n• *Entry:* ~$${entryPrice}\n\n_Profit secured directly into wallet!_`);
         continue;
       }
     }
