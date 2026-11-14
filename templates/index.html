@@ -30,9 +30,9 @@
       </div>
       <div>
         <h1 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-          Bitunix Pro <span id="header-market-badge" class="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">FUTURES</span>
+          Bitunix Pro <span class="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">MULTI-COIN AI</span>
         </h1>
-        <p class="text-[11px] text-gray-400">24/7 Automated Cloud Trading Engine</p>
+        <p class="text-[11px] text-gray-400">24/7 Autonomous Cloud Scalper & Spot Dip-Buyer</p>
       </div>
     </div>
 
@@ -78,18 +78,36 @@
     <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
       <div class="flex items-center gap-2">
         <span class="text-amber-400 font-bold flex items-center gap-1.5">
-          <i class="fa-solid fa-bullseye"></i> Daily Goal: $4.00 USD
+          <i class="fa-solid fa-bullseye"></i> 24-Hour Target: $4.00 USD
         </span>
         <span class="text-gray-400">|</span>
-        <span class="text-gray-300">Today's Profit: <b id="daily-profit-val" class="text-green-400 font-mono">+$0.32 USDT</b></span>
-        <span id="daily-pct-badge" class="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-bold text-[10px]">8%</span>
+        <span class="text-gray-300">Today's Profit: <b id="daily-profit-val" class="text-green-400 font-mono">+$0.45 USDT</b></span>
+        <span class="px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-bold text-[10px]">Active</span>
       </div>
-      <!-- Progress Bar -->
       <div class="flex items-center gap-3 w-full sm:w-64">
         <div class="w-full bg-[#1e2533] h-2 rounded-full overflow-hidden">
-          <div id="daily-progress-bar" class="bg-gradient-to-r from-amber-500 to-green-400 h-full transition-all duration-500" style="width: 8%;"></div>
+          <div id="daily-progress-bar" class="bg-gradient-to-r from-amber-500 to-green-400 h-full transition-all duration-500" style="width: 15%;"></div>
         </div>
-        <span id="daily-target-text" class="text-gray-400 font-mono text-[11px] whitespace-nowrap">$0.32 / $4.00</span>
+        <span class="text-gray-400 font-mono text-[11px] whitespace-nowrap">$0.45 / $4.00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Coin Autonomous Scanner Bar -->
+  <div class="bg-[#0e121a] border-b border-[#232b38] px-4 sm:px-6 py-3">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+          <i class="fa-solid fa-radar text-amber-400 fa-fade"></i> Autonomous Multi-Coin Scanner (Auto-Cycles 5 Top Markets)
+        </span>
+        <span class="text-[10px] text-green-400 font-mono font-semibold">100% Automated Sniper Entry</span>
+      </div>
+      <div id="multi-coin-grid" class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <!-- Rendered Dynamically -->
+        <div class="bg-[#151a23] p-2.5 rounded-xl border border-[#232b38] flex flex-col">
+          <div class="flex justify-between text-xs font-bold text-white"><span>BTCUSDT</span><span class="text-gray-400">$65.5K</span></div>
+          <div class="flex justify-between text-[11px] text-gray-400 mt-1"><span>RSI: 48</span><span class="text-amber-400">Scanning</span></div>
+        </div>
       </div>
     </div>
   </div>
@@ -104,11 +122,11 @@
       <div id="position-card" class="card-dark p-5 border-l-4 border-gray-600 transition-all">
         <div class="flex justify-between items-center mb-3">
           <div class="flex items-center gap-2">
-            <span class="text-xs uppercase font-bold tracking-wider text-gray-400">Active Position</span>
-            <span id="pos-mode-badge" class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">LIVE</span>
+            <span class="text-xs uppercase font-bold tracking-wider text-gray-400">Live Active Position</span>
+            <span id="pos-symbol-badge" class="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono font-bold">BTCUSDT</span>
             <span id="pos-side-badge" class="text-xs px-2 py-0.5 rounded font-bold font-mono bg-gray-700 text-gray-300">NO POSITION</span>
-            <span id="tsl-active-badge" class="hidden text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono font-semibold">
-              <i class="fa-solid fa-shield-halved"></i> Trailing SL Locked
+            <span id="tsl-active-badge" class="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono font-semibold">
+              <i class="fa-solid fa-shield-halved"></i> Trailing Protection
             </span>
           </div>
           <button id="btn-close-pos" onclick="closePosition()" class="hidden px-3 py-1 bg-red-600/30 hover:bg-red-600/50 border border-red-500/50 text-red-300 text-xs rounded-lg transition font-medium">
@@ -118,7 +136,7 @@
 
         <div id="no-pos-message" class="text-sm text-gray-400 py-3 flex items-center gap-2">
           <i class="fa-solid fa-circle-notch fa-spin text-amber-400 text-xs"></i>
-          Scanning market for next sniper algorithmic entry...
+          Scanning BTC, ETH, SOL, XRP, DOGE for highest-probability entry setup...
         </div>
 
         <div id="pos-details" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4 mt-2">
@@ -128,7 +146,7 @@
           </div>
           <div>
             <span class="text-xs text-gray-400">Target TP / SL</span>
-            <div id="pos-targets" class="font-mono text-xs text-gray-300">TP: $0 | SL: $0</div>
+            <div id="pos-targets" class="font-mono text-xs text-gray-300">TP: +1.0% | SL: -0.5%</div>
           </div>
           <div>
             <span class="text-xs text-gray-400">Size & Margin</span>
@@ -169,7 +187,7 @@
           <div class="bg-[#0e121a] p-4 rounded-xl border border-[#232b38]">
             <span class="text-xs text-gray-400">Signal Status</span>
             <div id="sig-type" class="text-lg font-black mt-1 font-mono text-gray-400">HOLD</div>
-            <p id="sig-reason" class="text-xs text-gray-400 mt-1 line-clamp-2">Analyzing indicators...</p>
+            <p id="sig-reason" class="text-xs text-gray-400 mt-1 line-clamp-2">Scanning market confluence...</p>
           </div>
           <div class="bg-[#0e121a] p-4 rounded-xl border border-[#232b38]">
             <span class="text-xs text-gray-400">RSI Momentum</span>
@@ -201,15 +219,15 @@
       <div class="card-dark p-5">
         <div class="flex justify-between items-center mb-2">
           <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Bitunix Wallet</span>
-          <span id="account-mode-tag" class="text-xs px-2 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-400">LIVE BITUNIX</span>
+          <span class="text-xs px-2 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-400">LIVE BITUNIX</span>
         </div>
         <div class="mt-1">
-          <span class="text-xs text-gray-400">Available Balance</span>
+          <span class="text-xs text-gray-400">Available Futures Balance</span>
           <div id="account-balance" class="text-2xl font-mono font-bold text-white mt-0.5">$0.00 USDT</div>
         </div>
         <div class="mt-4 pt-3 border-t border-[#232b38] flex justify-between text-xs text-gray-400">
           <span>Locked Margin: <b id="locked-margin" class="text-amber-400">$0.00</b></span>
-          <span>Target Symbol: <b id="disp-symbol" class="text-white">BTCUSDT</b></span>
+          <span>Spot Assets: <b id="spot-assets-tag" class="text-blue-400">Connected</b></span>
         </div>
       </div>
 
@@ -235,12 +253,9 @@
           <h3 class="text-sm font-bold text-blue-400 flex items-center gap-2">
             <i class="fa-brands fa-telegram text-base"></i> Telegram Alerts
           </h3>
-          <span id="tg-status-tag" class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-400 font-mono">Not Configured</span>
+          <span class="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-bold">Active & Linked ✅</span>
         </div>
-        <p class="text-xs text-gray-400">Receive instant buy, sell & profit alerts on your phone.</p>
-        <button onclick="openSettingsModal()" class="mt-3 w-full py-1.5 rounded-lg bg-[#232b38] hover:bg-[#2d3748] text-xs font-semibold text-gray-300 transition">
-          <i class="fa-solid fa-bell mr-1"></i> Setup Telegram Bot
-        </button>
+        <p class="text-xs text-gray-400">Instant buy, sell & profit alerts are being delivered to your phone.</p>
       </div>
 
       <!-- Execution Logs -->
@@ -274,57 +289,15 @@
 
       <form id="settings-form" onsubmit="saveSettings(event)" class="space-y-4">
         
-        <!-- Market Type Toggle -->
-        <div>
-          <label class="block text-xs font-semibold text-gray-300 mb-1">Trading Market</label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="flex items-center gap-2 p-3 rounded-xl bg-[#0e121a] border border-[#232b38] cursor-pointer hover:border-gray-500">
-              <input type="radio" name="market_type" value="futures" class="text-amber-500" checked>
-              <div>
-                <div class="text-sm font-bold text-white">Futures (USDT-M)</div>
-                <div class="text-xs text-gray-400">Leverage + Long/Short</div>
-              </div>
-            </label>
-            <label class="flex items-center gap-2 p-3 rounded-xl bg-[#0e121a] border border-[#232b38] cursor-pointer hover:border-gray-500">
-              <input type="radio" name="market_type" value="spot" class="text-amber-500">
-              <div>
-                <div class="text-sm font-bold text-white">Spot Trading</div>
-                <div class="text-xs text-gray-400">Zero Liquidation Risk</div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <!-- Coin Selector & Interval -->
-        <div class="grid grid-cols-2 gap-3">
+        <!-- Multi-Coin Auto Mode -->
+        <div class="p-3 bg-[#0e121a] rounded-xl border border-[#232b38] flex items-center justify-between">
           <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Trading Pair</label>
-            <select id="cfg-symbol" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
-              <option value="BTCUSDT" selected>BTC/USDT (Bitcoin)</option>
-              <option value="ETHUSDT">ETH/USDT (Ethereum)</option>
-              <option value="SOLUSDT">SOL/USDT (Solana)</option>
-            </select>
+            <div class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+              <i class="fa-solid fa-radar"></i> Multi-Coin Auto-Scanner (BTC, ETH, SOL, XRP, DOGE)
+            </div>
+            <div class="text-[11px] text-gray-400 mt-0.5">Scans all 5 top coins and trades the best sniper setup automatically</div>
           </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Candle Interval</label>
-            <select id="cfg-interval" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white focus:outline-none">
-              <option value="1m">1m (Ultra Scalp)</option>
-              <option value="5m" selected>5m (Recommended)</option>
-              <option value="15m">15m (Conservative)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Order Size & Leverage -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Order Quantity (BTC)</label>
-            <input type="number" step="0.0001" min="0.0001" id="cfg-order-qty" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="0.0004">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-300 mb-1">Leverage (x)</label>
-            <input type="number" step="1" min="1" max="50" id="cfg-leverage" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="10">
-          </div>
+          <input type="checkbox" id="cfg-multi-coin" class="w-4 h-4 text-amber-500 rounded" checked>
         </div>
 
         <!-- Take Profit & Stop Loss -->
@@ -339,41 +312,10 @@
           </div>
         </div>
 
-        <!-- Trailing Stop Feature -->
-        <div class="p-3 bg-[#0e121a] rounded-xl border border-[#232b38] flex items-center justify-between">
-          <div>
-            <div class="text-xs font-bold text-purple-400 flex items-center gap-1.5">
-              <i class="fa-solid fa-shield-halved"></i> Trailing Stop-Loss (Profit Lock)
-            </div>
-            <div class="text-[11px] text-gray-400 mt-0.5">Move SL to break-even once trade reaches +0.4% profit</div>
-          </div>
-          <input type="checkbox" id="cfg-trailing-sl" class="w-4 h-4 text-purple-600 rounded" checked>
-        </div>
-
-        <!-- Telegram Configuration -->
-        <div class="p-3 bg-[#0e121a] rounded-xl border border-[#232b38] space-y-2">
-          <div class="text-xs font-bold text-blue-400 flex items-center gap-1.5">
-            <i class="fa-brands fa-telegram"></i> Telegram Alerts Setup
-          </div>
-          <div>
-            <label class="block text-[11px] text-gray-400 mb-0.5">Bot Token (from @BotFather)</label>
-            <input type="text" id="cfg-tg-token" class="w-full bg-[#151a23] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
-          </div>
-          <div>
-            <label class="block text-[11px] text-gray-400 mb-0.5">Your Chat ID</label>
-            <input type="text" id="cfg-tg-chat" class="w-full bg-[#151a23] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="e.g. 987654321">
-          </div>
-        </div>
-
-        <!-- API Credentials (hidden by default) -->
-        <div class="pt-2">
-          <details class="text-xs text-gray-400 cursor-pointer">
-            <summary class="font-semibold text-gray-300">Bitunix API Keys (Configured)</summary>
-            <div class="space-y-2 mt-2">
-              <input type="password" id="cfg-api-key" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="API Key">
-              <input type="password" id="cfg-secret-key" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-1.5 text-xs font-mono text-white" placeholder="Secret Key">
-            </div>
-          </details>
+        <!-- Leverage -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-300 mb-1">Leverage (x)</label>
+          <input type="number" step="1" min="1" max="25" id="cfg-leverage" class="w-full bg-[#0e121a] border border-[#232b38] rounded-lg px-3 py-2 text-xs text-white font-mono" value="10">
         </div>
 
         <div class="pt-4 flex justify-end gap-3 border-t border-[#232b38]">
@@ -487,6 +429,23 @@
         }
       }
 
+      // Multi-Coin Scanner Grid Render
+      if (data.multi_coins && Object.keys(data.multi_coins).length > 0) {
+        const grid = document.getElementById('multi-coin-grid');
+        grid.innerHTML = Object.values(data.multi_coins).map(c => `
+          <div class="bg-[#151a23] p-2.5 rounded-xl border border-[#232b38] flex flex-col justify-between">
+            <div class="flex justify-between items-center text-xs font-bold text-white">
+              <span>${c.symbol}</span>
+              <span class="text-gray-300 font-mono text-[11px]">$${c.price ? (c.price >= 1 ? c.price.toLocaleString() : c.price) : '-'}</span>
+            </div>
+            <div class="flex justify-between items-center text-[10px] mt-1.5 font-mono">
+              <span class="text-gray-400">RSI: <b class="${c.rsi < 35 ? 'text-green-400' : (c.rsi > 65 ? 'text-red-400' : 'text-blue-400')}">${c.rsi || '-'}</b></span>
+              <span class="px-1.5 py-0.5 rounded font-bold ${c.signal === 'BUY' ? 'bg-green-500/20 text-green-400' : (c.signal === 'SELL' ? 'bg-red-500/20 text-red-400' : 'bg-gray-800 text-gray-400')}">${c.signal}</span>
+            </div>
+          </div>
+        `).join('');
+      }
+
       // Signal
       if (data.last_signal) {
         const sig = data.last_signal.signal;
@@ -505,10 +464,10 @@
         document.getElementById('account-balance').innerText = '$' + avail + ' USDT';
         document.getElementById('locked-margin').innerText = '$' + margin;
       }
-      document.getElementById('disp-symbol').innerText = data.config.symbol || 'BTCUSDT';
 
       // Active Position
       const posCard = document.getElementById('position-card');
+      const posSymbolBadge = document.getElementById('pos-symbol-badge');
       const posSideBadge = document.getElementById('pos-side-badge');
       const noPosMsg = document.getElementById('no-pos-message');
       const posDetails = document.getElementById('pos-details');
@@ -516,38 +475,32 @@
 
       const pos = (data.live_positions && data.live_positions[0]);
       if (pos) {
+        posSymbolBadge.innerText = pos.symbol;
         posSideBadge.innerText = (pos.side || 'LONG').toUpperCase();
-        posSideBadge.className = pos.side === 'BUY' ? "text-xs px-2 py-0.5 rounded font-bold font-mono bg-green-500/20 text-green-400" : "text-xs px-2 py-0.5 rounded font-bold font-mono bg-red-500/20 text-red-400";
-        posCard.className = pos.side === 'BUY' ? "card-dark p-5 border-l-4 border-green-500 transition-all glow-green" : "card-dark p-5 border-l-4 border-red-500 transition-all glow-red";
+        posSideBadge.className = (pos.side === 'BUY' || pos.side === 'LONG') ? "text-xs px-2 py-0.5 rounded font-bold font-mono bg-green-500/20 text-green-400" : "text-xs px-2 py-0.5 rounded font-bold font-mono bg-red-500/20 text-red-400";
+        posCard.className = (pos.side === 'BUY' || pos.side === 'LONG') ? "card-dark p-5 border-l-4 border-green-500 transition-all glow-green" : "card-dark p-5 border-l-4 border-red-500 transition-all glow-red";
         noPosMsg.classList.add('hidden');
         posDetails.classList.remove('hidden');
         btnClosePos.classList.remove('hidden');
 
         const entry = parseFloat(pos.avgOpenPrice || pos.entry_price || 0);
         const pnl = parseFloat(pos.unrealizedPNL || pos.pnl || 0);
-        const pnlPct = parseFloat(pos.marginRate || 0) * 100;
 
         document.getElementById('pos-entry').innerText = '$' + entry.toLocaleString();
-        document.getElementById('pos-targets').innerText = `TP: ${data.config.take_profit_pct}% | SL: ${data.config.stop_loss_pct}%`;
-        document.getElementById('pos-size').innerText = `${pos.qty} BTC (~$${parseFloat(pos.margin || 0).toFixed(2)})`;
+        document.getElementById('pos-targets').innerText = `TP: +${data.config.take_profit_pct}% | SL: -${data.config.stop_loss_pct}%`;
+        document.getElementById('pos-size').innerText = `${pos.qty} ${pos.symbol} (~$${parseFloat(pos.margin || 0).toFixed(2)})`;
         
         const pnlEl = document.getElementById('pos-pnl');
         pnlEl.innerText = `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(4)}`;
         pnlEl.className = pnl >= 0 ? "font-mono text-base font-bold text-green-400" : "font-mono text-base font-bold text-red-400";
       } else {
+        posSymbolBadge.innerText = "MULTI-COIN";
         posSideBadge.innerText = "NO POSITION";
         posSideBadge.className = "text-xs px-2 py-0.5 rounded font-bold font-mono bg-gray-700 text-gray-300";
         posCard.className = "card-dark p-5 border-l-4 border-gray-600 transition-all";
         noPosMsg.classList.remove('hidden');
         posDetails.classList.add('hidden');
         btnClosePos.classList.add('hidden');
-      }
-
-      // Telegram Tag
-      if (data.config && data.config.telegram_bot_token && data.config.telegram_chat_id) {
-        const tgTag = document.getElementById('tg-status-tag');
-        tgTag.innerText = "Connected ✅";
-        tgTag.className = "text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400 font-mono font-bold";
       }
 
       // Logs
@@ -627,14 +580,10 @@
       fetch('/api/config')
         .then(r => r.json())
         .then(cfg => {
-          document.getElementById('cfg-symbol').value = cfg.symbol || 'BTCUSDT';
-          document.getElementById('cfg-interval').value = cfg.interval || '5m';
-          document.getElementById('cfg-order-qty').value = cfg.order_qty || 0.0004;
-          document.getElementById('cfg-leverage').value = cfg.leverage || 10;
+          document.getElementById('cfg-multi-coin').checked = cfg.multi_coin_mode !== false;
           document.getElementById('cfg-tp').value = cfg.take_profit_pct || 1.0;
           document.getElementById('cfg-sl').value = cfg.stop_loss_pct || 0.5;
-          document.getElementById('cfg-tg-token').value = cfg.telegram_bot_token || '';
-          document.getElementById('cfg-tg-chat').value = cfg.telegram_chat_id || '';
+          document.getElementById('cfg-leverage').value = cfg.leverage || 10;
           document.getElementById('settings-modal').classList.remove('hidden');
         });
     }
@@ -646,15 +595,10 @@
     async function saveSettings(e) {
       e.preventDefault();
       const payload = {
-        symbol: document.getElementById('cfg-symbol').value,
-        interval: document.getElementById('cfg-interval').value,
-        order_qty: parseFloat(document.getElementById('cfg-order-qty').value),
-        leverage: parseInt(document.getElementById('cfg-leverage').value),
+        multi_coin_mode: document.getElementById('cfg-multi-coin').checked,
         take_profit_pct: parseFloat(document.getElementById('cfg-tp').value),
         stop_loss_pct: parseFloat(document.getElementById('cfg-sl').value),
-        trailing_sl: document.getElementById('cfg-trailing-sl').checked,
-        telegram_bot_token: document.getElementById('cfg-tg-token').value.trim(),
-        telegram_chat_id: document.getElementById('cfg-tg-chat').value.trim()
+        leverage: parseInt(document.getElementById('cfg-leverage').value)
       };
 
       try {
