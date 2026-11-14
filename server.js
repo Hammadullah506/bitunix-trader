@@ -713,6 +713,25 @@ app.get('/api/status', async (req, res) => {
 });
 
 app.get('/api/config', (req, res) => res.json(config));
+
+// Telegram test endpoint — server se directly bhejta hai
+app.get('/api/test_telegram', async (req, res) => {
+  try {
+    const url = `https://api.telegram.org/bot${config.telegram_bot_token}/sendMessage`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.telegram_chat_id,
+        text: `✅ Bitunix Pro Test\n\nTelegram kaam kar raha hai!\nBTC: $${multiCoinScanner['BTCUSDT']?.price || '-'}\nBalance: $${latestFuturesCash} USDT`
+      })
+    });
+    const data = await r.json();
+    res.json({ ok: data.ok, telegram_response: data });
+  } catch(e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
 app.post('/api/config', (req, res) => {
   saveConfig(req.body);
   log("Configuration updated", "INFO");
