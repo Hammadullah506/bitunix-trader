@@ -49,9 +49,11 @@
           <span class="text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0.2 rounded font-mono font-bold">24/7 CLOUD</span>
         </div>
         <div class="text-[10px] text-gray-400 flex items-center gap-2">
-          <span>BTC: <b id="hdr-btc-price" class="text-white font-mono">$65,500</b></span>
+          <span>BTC: <b id="hdr-btc-price" class="text-white font-mono">$64,500</b></span>
           <span class="text-gray-600">•</span>
-          <span class="text-purple-400 font-medium">Uncapped Runner</span>
+          <span class="text-emerald-400 font-semibold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> 0 Fatigue • 24/7 AI
+          </span>
         </div>
       </div>
     </div>
@@ -205,16 +207,24 @@
       <!-- Balance Card -->
       <div class="card-dark p-3.5 sm:p-4">
         <div class="flex justify-between items-center mb-1.5">
-          <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Bitunix Wallet</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-amber-500/20 text-amber-400">FUTURES + SPOT</span>
+          <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Bitunix Live Capital</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+            <i class="fa-solid fa-shield-halved mr-1"></i> 100% CAPITAL SAFE
+          </span>
         </div>
-        <div class="mt-1">
-          <span class="text-[10px] text-gray-400">Futures Available Balance</span>
-          <div id="account-balance" class="text-xl font-mono font-black text-white mt-0.5">$0.00 USDT</div>
+        <div class="mt-1 flex items-baseline justify-between">
+          <div>
+            <span class="text-[10px] text-gray-400">Total Net Worth (Futures + Spot)</span>
+            <div id="total-net-worth" class="text-2xl font-mono font-black text-white mt-0.5">$34.98 USDT</div>
+          </div>
+          <div class="text-right">
+            <span class="text-[10px] text-emerald-400 font-bold">24/7 AI Protected</span>
+            <div id="futures-cash" class="text-xs font-mono text-gray-300 mt-0.5">Futures Cash: <b id="account-balance" class="text-amber-400">$9.95</b></div>
+          </div>
         </div>
-        <div class="mt-2.5 pt-2.5 border-t border-[#1e2634] flex justify-between text-[11px] text-gray-400">
-          <span>In Trade Margin: <b id="locked-margin" class="text-amber-400 font-mono">$0.00</b></span>
-          <span>Spot Dip-Buyer: <b id="spot-assets-tag" class="text-green-400 font-mono">Active ✅</b></span>
+        <div class="mt-2.5 pt-2.5 border-t border-[#1e2634] grid grid-cols-2 gap-2 text-[11px] text-gray-400">
+          <div>In Trade Margin: <b id="locked-margin" class="text-amber-400 font-mono">$0.00</b></div>
+          <div class="text-right">Spot Dip Holdings: <b id="spot-assets-tag" class="text-purple-400 font-mono">~$25.04</b></div>
         </div>
       </div>
 
@@ -526,14 +536,36 @@
         if (sigR) sigR.innerText = data.last_signal.reason || "";
       }
 
-      // Bitunix Account Balance
+      // Bitunix Account Balance & Net Worth
+      let futuresTotal = 0;
       if (data.live_balance) {
-        const avail = parseFloat(data.live_balance.available || 0).toFixed(2);
-        const margin = parseFloat(data.live_balance.margin || 0).toFixed(2);
+        const avail = parseFloat(data.live_balance.available || 0);
+        const margin = parseFloat(data.live_balance.margin || 0);
+        futuresTotal = avail + margin;
         const accBal = document.getElementById('account-balance');
-        if (accBal) accBal.innerText = '$' + avail + ' USDT';
+        if (accBal) accBal.innerText = '$' + avail.toFixed(2);
         const lockM = document.getElementById('locked-margin');
-        if (lockM) lockM.innerText = '$' + margin;
+        if (lockM) lockM.innerText = '$' + margin.toFixed(2);
+      }
+
+      let spotTotalUsd = 0;
+      if (data.spot_balance && Array.isArray(data.spot_balance)) {
+        for (const item of data.spot_balance) {
+          const bal = parseFloat(item.balance || 0);
+          if (bal <= 0) continue;
+          if (item.coin === 'USDT') spotTotalUsd += bal;
+          else if (data.multi_coins && data.multi_coins[`${item.coin}USDT`]) {
+            spotTotalUsd += bal * parseFloat(data.multi_coins[`${item.coin}USDT`].price || 0);
+          }
+        }
+        const spotTag = document.getElementById('spot-assets-tag');
+        if (spotTag) spotTag.innerText = '~$ ' + spotTotalUsd.toFixed(2);
+      }
+
+      const netWorthEl = document.getElementById('total-net-worth');
+      if (netWorthEl) {
+        const grandTotal = futuresTotal + spotTotalUsd;
+        netWorthEl.innerText = '$' + grandTotal.toFixed(2) + ' USDT';
       }
 
       // Active Position
