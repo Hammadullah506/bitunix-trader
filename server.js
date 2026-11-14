@@ -43,7 +43,7 @@ function loadConfig() {
     telegram_chat_id: "7955301726",
     today_profit: 0.0,
     daily_goal: 4.0,
-    max_concurrent_positions: 3
+    max_concurrent_positions: 1
   };
   if (fs.existsSync(CONFIG_PATH)) {
     try {
@@ -420,7 +420,7 @@ async function futuresTick() {
     }
 
     // 1. Strict Real Loss Protection: Cut only on genuine -$0.09 USDT (or -5% margin loss)
-    if (pnlUsd <= -0.03 || actualPnlPct <= -3.0) {
+    if (pnlUsd <= -0.05 || actualPnlPct <= -4.0) {
       log(`[STRICT SL CUT] ${pos.symbol} hit actual -$${Math.abs(pnlUsd).toFixed(4)} USDT loss! Exiting...`, 'WARNING');
       tracker.closedNotified = true;
       await closeSpecificPosition(pos);
@@ -465,7 +465,7 @@ async function futuresTick() {
   }
 
   // 3. Multi-Coin Concurrent Trades (Up to 3 Simultaneous Positions on Distinct Coins)
-  const maxActivePositions = parseInt(config.max_concurrent_positions || 3);
+  const maxActivePositions = parseInt(config.max_concurrent_positions || 1);
   const currentActiveSymbols = new Set(activePositions.map(p => p.symbol));
 
   if (isRunning && activePositions.length < maxActivePositions && candidates.length > 0) {
