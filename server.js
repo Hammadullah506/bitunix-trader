@@ -253,27 +253,55 @@ async function futuresTick() {
       let reason = 'Range Neutral';
       let confidence = 40;
 
-      const isOversold = (prevRsi <= (config.rsi_oversold || 30) && currRsi > prevRsi);
-      const isOverbought = (prevRsi >= (config.rsi_overbought || 70) && currRsi < prevRsi);
-      const isBullCross = (cEma9 > cEma21 && currRsi >= 42 && currRsi <= 60 && latestPrice >= cEma50);
-      const isBearCross = (cEma9 < cEma21 && currRsi <= 56 && currRsi >= 40 && latestPrice <= cEma50);
+      // Market trend detection
+      const isBearMarket = (cEma9 < cEma21 && cEma21 < cEma50); // All EMAs stacked bearish
+      const isBullMarket = (cEma9 > cEma21 && cEma21 > cEma50); // All EMAs stacked bullish
 
-      // Strict Anti-Trap Filters: Never BUY near overbought peak, never SHORT near oversold bottom
-      if (isOversold && currRsi <= 35) {
+      // RSI bounce signals — adaptive thresholds
+      const oversoldLevel = isBearMarket ? 32 : 36;   // In bear market, wait deeper
+      const overboughtLevel = isBullMarket ? 68 : 64; // In bull market, wait higher
+
+      const isOversold  = (currRsi <= oversoldLevel && currRsi > prevRsi);   // RSI turning UP from bottom
+      const isOverbought = (currRsi >= overboughtLevel && currRsi < prevRsi); // RSI turning DOWN from top
+
+      // EMA cross signals
+      const isBullCross = (cEma9 > cEma21 && currRsi >= 40 && currRsi <= 62 && latestPrice >= cEma21);
+      const isBearCross = (cEma9 < cEma21 && currRsi <= 60 && currRsi >= 38 && latestPrice <= cEma21);
+
+      // Bear market momentum SHORT — most profitable in current conditions!
+      // If EMA9 < EMA21 < EMA50 and RSI is falling from mid-zone → strong SHORT
+      const isBearMomentum = (isBearMarket && currRsi >= 38 && currRsi <= 55 && currRsi < prevRsi && latestPrice < cEma9);
+
+      // Bull market momentum LONG
+      const isBullMomentum = (isBullMarket && currRsi >= 45 && currRsi <= 62 && currRsi > prevRsi && latestPrice > cEma9);
+
+      if (isOversold && !isBearMarket) {
+        // Oversold bounce BUY — only valid when NOT in full bear trend
         sig = 'BUY';
-        reason = `Oversold Reversal (RSI: ${currRsi})`;
-        confidence = 90;
-      } else if (isOverbought && currRsi >= 65) {
+        reason = `Oversold Bounce (RSI: ${currRsi} turning up)`;
+        confidence = 88;
+      } else if (isOverbought && !isBullMarket) {
+        // Overbought rejection SELL — only valid when NOT in full bull trend
         sig = 'SELL';
-        reason = `Overbought Drop (RSI: ${currRsi})`;
-        confidence = 90;
-      } else if (isBullCross && currRsi < 62) {
+        reason = `Overbought Rejection (RSI: ${currRsi} turning down)`;
+        confidence = 88;
+      } else if (isBearMomentum) {
+        // Bear market momentum SHORT — ride the downtrend!
+        sig = 'SELL';
+        reason = `Bear Momentum SHORT (EMA bearish stack, RSI: ${currRsi})`;
+        confidence = 85;
+      } else if (isBullMomentum) {
+        // Bull market momentum LONG
         sig = 'BUY';
-        reason = `Bullish Trend (EMA9>21 & Price>EMA50)`;
+        reason = `Bull Momentum LONG (EMA bullish stack, RSI: ${currRsi})`;
+        confidence = 85;
+      } else if (isBullCross) {
+        sig = 'BUY';
+        reason = `Bullish EMA Cross (EMA9>21, RSI: ${currRsi})`;
         confidence = 80;
-      } else if (isBearCross && currRsi > 38) {
+      } else if (isBearCross) {
         sig = 'SELL';
-        reason = `Bearish Trend (EMA9<21 & Price<EMA50)`;
+        reason = `Bearish EMA Cross (EMA9<21, RSI: ${currRsi})`;
         confidence = 80;
       }
 
@@ -392,7 +420,7 @@ async function futuresTick() {
     }
 
     // 1. Strict Real Loss Protection: Cut only on genuine -$0.09 USDT (or -5% margin loss)
-    if (pnlUsd <= -0.09 || actualPnlPct <= -5.0) {
+    if (pnlUsd <= -0.07 || actualPnlPct <= -4.0) {
       log(`[STRICT SL CUT] ${pos.symbol} hit actual -$${Math.abs(pnlUsd).toFixed(4)} USDT loss! Exiting...`, 'WARNING');
       tracker.closedNotified = true;
       await closeSpecificPosition(pos);
