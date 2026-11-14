@@ -609,10 +609,85 @@ async function masterTick() {
   await spotTick();
 }
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'index.html')));
+app.get('/', (req, res) => {
+  res.setHeader('Link', '</llms.txt>; rel="alternate"; type="text/plain", </.well-known/mcp/server-card.json>; rel="mcp-server-card"');
+  res.sendFile(path.join(__dirname, 'templates', 'index.html'));
+});
 app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'manifest.json')));
 app.get('/sw.js', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'sw.js')));
 app.get('/icon.svg', (req, res) => res.sendFile(path.join(__dirname, 'templates', 'icon.svg')));
+
+// robots.txt — tells crawlers/agents what they can access
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`User-agent: *
+Allow: /
+Disallow: /api/
+
+Content-Signal: search=no, ai-train=no
+
+Sitemap: https://trade.malikhammaddigital.com/sitemap.xml
+`);
+});
+
+// sitemap.xml — lists all public pages
+app.get('/sitemap.xml', (req, res) => {
+  res.type('application/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://trade.malikhammaddigital.com/</loc>
+    <changefreq>always</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`);
+});
+
+// llms.txt — summary for LLM agents
+app.get('/llms.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`# Bitunix Pro AI Trader
+
+> Automated 24/7 cryptocurrency futures trading bot running on Bitunix exchange.
+
+## What This Site Does
+- Real-time RSI + EMA signal engine scanning BTC, ETH, SOL, XRP, DOGE every 5 seconds
+- Automatically opens and closes futures positions based on market signals
+- Sends Telegram notifications for every trade open, profit lock, and stop-loss
+- Tracks spot holdings and auto-sells at +1.2% bounce
+- Dashboard shows live PnL, candlestick chart, wallet balances
+
+## API Endpoints (read-only public)
+- GET /api/status — live bot status, positions, signals, logs, balances
+
+## Owner
+- Malik Hammad Digital
+- Contact: https://t.me/Hammadmaliktrader_bot
+- Source: https://github.com/Hammadullah506/bitunix-trader
+`);
+});
+
+// MCP Server Card — for AI agent discovery
+app.get('/.well-known/mcp/server-card.json', (req, res) => {
+  res.json({
+    name: "Bitunix Pro AI Trader",
+    version: "2.0.0",
+    description: "Automated crypto futures trading bot with RSI/EMA signals. Read live status, positions, and market signals.",
+    endpoint: "https://trade.malikhammaddigital.com/api",
+    capabilities: {
+      tools: [
+        {
+          name: "get_status",
+          description: "Get live bot status, active positions, market signals, wallet balances, and recent logs.",
+          endpoint: "/api/status",
+          method: "GET"
+        }
+      ]
+    },
+    contact: { url: "https://t.me/Hammadmaliktrader_bot" },
+    source: "https://github.com/Hammadullah506/bitunix-trader"
+  });
+});
 
 app.get('/api/status', async (req, res) => {
   let liveBal = null;
