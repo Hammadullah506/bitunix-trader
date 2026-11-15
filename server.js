@@ -533,7 +533,7 @@ async function futuresTick() {
       const qty = opp.qty;
 
       const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
-      let slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
+      const slPrice = stopLossPrice(side, price, slPct);
 
       const needMargin = (parseFloat(qty) * price) / parseFloat(config.leverage || 10);
       const haveMargin = await futuresAvailable();
@@ -568,6 +568,18 @@ async function futuresTick() {
       }
     }
   }
+}
+
+// Stop-loss price rounded to the same number of decimals as the coin's own price,
+// so cheap coins (DOGE, XRP) do not get rounded past the entry price.
+function stopLossPrice(side, price, slPct) {
+  const text = String(price);
+  const decimals = text.includes('.') ? text.split('.')[1].length : 0;
+  const factor = Math.pow(10, decimals);
+  const raw = side === 'BUY' ? price * (1 - slPct) : price * (1 + slPct);
+  // Round away from the entry so the stop is never on the wrong side of the price
+  const rounded = side === 'BUY' ? Math.floor(raw * factor) / factor : Math.ceil(raw * factor) / factor;
+  return Number(rounded.toFixed(decimals));
 }
 
 async function futuresAvailable() {
@@ -830,7 +842,7 @@ app.post('/api/manual_trade', async (req, res) => {
   }
 
   const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
-  const slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
+  const slPrice = stopLossPrice(side, price, slPct);
   const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
     effect: 'GTC', orderType: 'MARKET', qty: String(coin.qty), side: side, symbol: sym, tradeSide: 'OPEN',
     slPrice: String(slPrice), slOrderType: 'MARKET', slStopType: 'LAST_PRICE'
