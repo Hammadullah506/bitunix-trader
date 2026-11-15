@@ -60,10 +60,22 @@
     @media (max-width: 520px) {
       .bar { gap: 8px; }
       .bar .hide-sm { display: none; }
+      .bar { gap: 6px; }
+      .bar button { padding: 8px 9px; font-size: 14px; }
+      #state-text { font-size: 12px; }
+    }
+    @media (max-width: 380px) {
+      #state-text { display: none; }
       button, .btn { padding: 8px 10px; }
     }
 
     main { padding: 16px 0 40px; display: grid; gap: 16px; }
+    #toasts { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 20; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
+    .toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 12px; font-size: 14px; max-width: 360px; width: 100%; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+    .toast.buy { border-left-color: var(--up); }
+    .toast.sell { border-left-color: var(--down); }
+    .toast.info { border-left-color: var(--warn); }
+    @media (max-width: 520px) { #btn-sound { padding: 8px; } }
     .notice { border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
     @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
@@ -128,10 +140,11 @@
 <body>
   <header>
     <div class="wrap bar">
-      <div class="brand">Bitunix Trader</div>
+      <div class="brand"><span class="hide-sm">Bitunix </span>Trader</div>
       <div class="state"><span class="dot" id="dot"></span><span id="state-text">Loading</span></div>
       <div class="spacer"></div>
       <button id="btn-toggle" class="primary" disabled>Start</button>
+      <button id="btn-sound" title="Sound and pop-up alerts for signals and trades">Alerts off</button>
       <button id="btn-settings">Settings</button>
       <a class="btn hide-sm" href="/logout">Log out</a>
     </div>
@@ -207,6 +220,8 @@
       <a class="btn" href="/logout" style="justify-self:start">Log out</a>
     </main>
   </div>
+
+  <div id="toasts"></div>
 
   <dialog id="settings">
     <h2>Settings</h2>
@@ -362,8 +377,92 @@
       }
     }
 
+    // ---- Alerts: sound + pop-up when a coin gets a Buy/Sell signal or the bot opens/closes a trade ----
+    let alertsOn = false;
+    try { alertsOn = localStorage.getItem('alerts') === 'on'; } catch (e) {}
+    let audioCtx = null;
+    let prevSignals = null;
+    let seenLogs = null;
+
+    function beep(kind) {
+      if (!alertsOn) return;
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        // buy: rising two tones, sell: falling two tones, info: one tone
+        const notes = kind === 'buy' ? [660, 880] : kind === 'sell' ? [660, 440] : [560];
+        notes.forEach((f, i) => {
+          const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+          o.frequency.value = f; o.type = 'sine';
+          const t0 = audioCtx.currentTime + i * 0.18;
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+          o.connect(g); g.connect(audioCtx.destination);
+          o.start(t0); o.stop(t0 + 0.17);
+        });
+      } catch (e) {}
+    }
+
+    function notify(kind, text) {
+      if (!alertsOn) return;
+      beep(kind);
+      const el = document.createElement('div');
+      el.className = 'toast ' + kind;
+      el.textContent = text;
+      $('toasts').appendChild(el);
+      setTimeout(() => el.remove(), 8000);
+      try {
+        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification('Bitunix Trader', { body: text });
+      } catch (e) {}
+      if (navigator.vibrate) try { navigator.vibrate(kind === 'info' ? 100 : [80, 60, 80]); } catch (e) {}
+    }
+
+    function checkAlerts(d) {
+      // 1. Signals (already filtered by the 1h trend on the server)
+      const now = {};
+      for (const c of Object.values(d.multi_coins || {})) now[c.symbol] = c.signal;
+      if (prevSignals) {
+        for (const c of Object.values(d.multi_coins || {})) {
+          if (c.signal !== prevSignals[c.symbol] && (c.signal === 'BUY' || c.signal === 'SELL')) {
+            notify(c.signal === 'BUY' ? 'buy' : 'sell', `${c.name}: ${c.signal === 'BUY' ? 'Buy' : 'Sell'} signal at ${price(c.price)}. ${c.reason}`);
+          }
+        }
+      }
+      prevSignals = now;
+
+      // 2. Trades opened / closed and spot sales, from the activity log
+      const keyOf = (l) => l.time + '|' + l.message;
+      const logs = d.logs || [];
+      if (seenLogs) {
+        for (const l of logs.slice().reverse()) {
+          if (seenLogs.has(keyOf(l))) continue;
+          const m = l.message;
+          if (/Order Placed|\[MANUAL\]/.test(m)) notify(/ BUY /.test(m) ? 'buy' : 'sell', 'Trade opened: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
+          else if (/PROFIT LOCK|PROFIT PROTECT|\[SPOT\] Sold/.test(m)) notify('buy', 'Profit taken: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
+          else if (/STOP LOSS|DAILY GUARD\] Loss|ORDER FAILED/.test(m)) notify('sell', m.replace(/^\[[^\]]+\]\s*/, ''));
+        }
+      }
+      seenLogs = new Set(logs.map(keyOf));
+    }
+
+    function paintAlertsButton() {
+      $('btn-sound').textContent = alertsOn ? 'Alerts on' : 'Alerts off';
+      $('btn-sound').className = alertsOn ? 'primary' : '';
+    }
+    $('btn-sound').onclick = async () => {
+      alertsOn = !alertsOn;
+      try { localStorage.setItem('alerts', alertsOn ? 'on' : 'off'); } catch (e) {}
+      paintAlertsButton();
+      if (alertsOn) {
+        try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
+        notify('info', 'Alerts are on. You will hear a rising tone for Buy, a falling tone for Sell.');
+      }
+    };
+    paintAlertsButton();
+
     async function refresh() {
-      try { render(await api('/api/status?_t=' + Date.now())); } catch (e) { /* keep last view */ }
+      try { const d = await api('/api/status?_t=' + Date.now()); render(d); checkAlerts(d); } catch (e) { /* keep last view */ }
     }
 
     async function toggleBot() {
