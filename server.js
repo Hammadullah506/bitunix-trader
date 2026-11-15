@@ -367,8 +367,8 @@ function writeRunning(value) {
 // Only the process holding a fresh leader lock may place or close orders.
 let isLeader = false;
 // Each running copy gets a unique id and its start time. The NEWEST copy always takes
-// the lock, and an older copy that sees a newer one shuts itself down. This stops old
-// copies left behind by redeploys from trading with old code (or ignoring Stop).
+// the lock and the others stand by. This stops old copies left behind by redeploys
+// from trading with old code (or ignoring Stop).
 const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
 const INSTANCE_STARTED = Date.now();
 function claimLeadership() {
@@ -376,8 +376,8 @@ function claimLeadership() {
   const cur = readJson(LEADER_PATH);
   const curStarted = cur && typeof cur.started === 'number' ? cur.started : 0; // old versions wrote no start time
   if (cur && cur.id && cur.id !== INSTANCE_ID && curStarted > INSTANCE_STARTED && now - cur.at <= 20000) {
-    log('[INSTANCE] A newer copy of the bot is running. This old copy is shutting down.', 'WARNING');
-    setTimeout(() => process.exit(0), 500);
+    // A newer copy is trading. Stay on standby (the host restarts copies that exit,
+    // which would make them fight for the lock forever).
     isLeader = false;
     return false;
   }
