@@ -134,8 +134,9 @@ function loadConfig() {
     trailing_drop_net_pct: 5.0,   // then close when profit falls this far from its peak
     protect_arm_net_pct: 10.0,    // once profit has reached this...
     protect_floor_net_pct: 3.0,   // ...never let it fall below this: close and keep the gain
-    stop_loss_margin_pct: 10.0,   // cut a loser at this % of margin
-    strategy_version: 2,
+    stop_loss_margin_pct: 30.0,   // give a trade room: cut a loser only at this % of margin
+    min_confidence: 85,           // skip the weakest signals (plain EMA-cross state)
+    strategy_version: 3,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
@@ -146,7 +147,7 @@ function loadConfig() {
       // Settings saved by an older strategy version would undo the tested exit rules
       if (data.strategy_version !== defaultCfg.strategy_version) {
         for (const k of ['take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
-          'stop_loss_margin_pct', 'strategy_version']) cfg[k] = defaultCfg[k];
+          'stop_loss_margin_pct', 'min_confidence', 'strategy_version']) cfg[k] = defaultCfg[k];
       }
     } catch (e) {
       console.error("Config read error:", e);
@@ -170,7 +171,7 @@ function secretsFromEnv() {
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
-  'stop_loss_margin_pct', 'max_daily_loss_usd'];
+  'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
 
 // Config as shown to the browser: secrets replaced by a set / not-set flag
 function publicConfig() {
@@ -569,7 +570,7 @@ async function futuresTick() {
         lastSignal = { signal: sig, reason: reason, confidence: confidence };
       }
 
-      if (confidence >= 80 && (sig === 'BUY' || sig === 'SELL')) {
+      if (confidence >= parseFloat(config.min_confidence ?? 85) && (sig === 'BUY' || sig === 'SELL')) {
         return {
           symbol: sym,
           signal: sig,
@@ -629,7 +630,7 @@ async function futuresTick() {
   const trailDropPct = parseFloat(config.trailing_drop_net_pct ?? 5);
   const protectArmPct = parseFloat(config.protect_arm_net_pct ?? 10);
   const protectFloorPct = parseFloat(config.protect_floor_net_pct ?? 3);
-  const slMarginPct = parseFloat(config.stop_loss_margin_pct ?? 10);
+  const slMarginPct = parseFloat(config.stop_loss_margin_pct ?? 30);
 
   for (const pos of activePositions) {
     const posId = String(pos.positionId);
@@ -760,7 +761,7 @@ function stopLossPrice(side, price, slPct) {
 // the bot is offline, so it sits 1.5x further away than the bot's own stop loss.
 function exchangeStopPct() {
   const configured = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100;
-  const botStop = parseFloat(config.stop_loss_margin_pct ?? 10) / 100 / parseFloat(config.leverage || 10);
+  const botStop = parseFloat(config.stop_loss_margin_pct ?? 30) / 100 / parseFloat(config.leverage || 10);
   return Math.max(configured, botStop * 1.5);
 }
 
