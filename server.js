@@ -574,6 +574,14 @@ async function futuresTick() {
         confidence = 40;
       }
 
+      // Weak signals are not traded; show them as Wait so the screen matches what the bot does
+      const minConf = parseFloat(config.min_confidence ?? 85);
+      if (sig !== 'HOLD' && confidence < minConf) {
+        reason = `${sig} signal too weak (${reason}), waiting for a stronger one`;
+        sig = 'HOLD';
+        confidence = 40;
+      }
+
       multiCoinScanner[sym] = {
         symbol: sym,
         trend: trend,
