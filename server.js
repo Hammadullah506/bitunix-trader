@@ -11,7 +11,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // Dashboard login. Without DASHBOARD_PASSWORD the dashboard stays locked.
-const OPEN_PATHS = new Set(['/manifest.json', '/sw.js', '/icon.svg', '/robots.txt', '/login']);
+const OPEN_PATHS = new Set(['/manifest.json', '/sw.js', '/icon.svg', '/robots.txt', '/login', '/health']);
 const SESSION_COOKIE = 'bx_session';
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
@@ -639,6 +639,9 @@ async function futuresTick() {
   const activePositions = (posRes && posRes.code === 0 && Array.isArray(posRes.data)) 
     ? posRes.data.filter(p => parseFloat(p.qty) > 0)
     : [];
+  health.apiOk = !!(posRes && posRes.code === 0);
+  if (health.apiOk) lastPositionCount = activePositions.length;
+  else if (posRes && scanTickCount % 12 === 0) log(`[EXCHANGE] Position check failed: ${posRes.code} ${posRes.msg}`, 'ERROR');
 
   // Check for positions that closed (e.g. Stop Loss executed by exchange)
   const activeIds = new Set(activePositions.map(p => String(p.positionId)));
@@ -767,12 +770,15 @@ async function futuresTick() {
 
       if (orderRes && orderRes.code === 0) {
         lastEntryAt = Date.now();
+        health.lastOrderAt = new Date().toISOString();
+        health.lastOrderError = null;
         currentActiveSymbols.add(sym);
         activePositions.push({ symbol: sym, qty: qty, avgOpenPrice: price, side: side });
         log(`[LIVE MULTI] Concurrent Order Placed: ${side} ${qty} ${sym}!`, 'SUCCESS');
         sendTelegramAlert(`⚡ *CONCURRENT MULTI-TRADE EXECUTED!*\n\n• *Coin:* ${sym} (${COIN_CONFIGS[sym].name})\n• *Action:* ${side} (Market)\n• *Size:* ${qty}\n• *Entry:* ~$${price}\n• *🛑 Fixed Stop:* $${slPrice} (-${config.fixed_stop_loss_pct}%)\n• *Active Positions:* ${activePositions.length}/${maxActivePositions} Slots In Play\n\n_Parallel multi-coin execution active!_`);
       } else {
         log(`[ORDER FAILED] ${side} ${qty} ${sym}: ${orderRes ? `${orderRes.code} ${orderRes.msg}` : 'no response'}`, 'ERROR');
+        health.lastOrderError = { at: new Date().toISOString(), code: orderRes ? orderRes.code : null, msg: orderRes ? String(orderRes.msg).slice(0, 120) : 'no response' };
       }
     }
   }
@@ -919,10 +925,32 @@ async function spotTick() {
   }
 }
 
+// Public health check: no balances, keys or amounts. Lets the owner (or support) see why no trade is happening.
+const health = { startedAt: new Date().toISOString(), lastTickAt: null, lastOrderAt: null, lastOrderError: null, apiOk: null };
+app.get('/health', (req, res) => {
+  const signals = {};
+  for (const [sym, c] of Object.entries(multiCoinScanner)) signals[sym] = { signal: c.signal, trend: c.trend, reason: c.reason };
+  res.json({
+    running: readRunning(),
+    trading_copy: isLeader,
+    paused_for_today: guardReason,
+    keys_set: !!(config.api_key && config.secret_key),
+    exchange_api_ok: health.apiOk,
+    started_at: health.startedAt,
+    last_scan_at: health.lastTickAt,
+    last_order_at: health.lastOrderAt,
+    last_order_error: health.lastOrderError,
+    open_positions: lastPositionCount,
+    signals
+  });
+});
+let lastPositionCount = null;
+
 async function masterTick() {
   isRunning = readRunning();
   if (!claimLeadership()) return; // another copy of the app is doing the trading
   await futuresTick();
+  health.lastTickAt = new Date().toISOString();
   await spotTick();
 }
 
