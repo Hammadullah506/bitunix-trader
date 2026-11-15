@@ -362,16 +362,24 @@ function writeRunning(value) {
 }
 // Only the process holding a fresh leader lock may place or close orders.
 let isLeader = false;
+// Each running copy gets a unique id and its start time. The NEWEST copy always takes
+// the lock, and an older copy that sees a newer one shuts itself down. This stops old
+// copies left behind by redeploys from trading with old code (or ignoring Stop).
+const INSTANCE_ID = crypto.randomBytes(8).toString('hex');
+const INSTANCE_STARTED = Date.now();
 function claimLeadership() {
   const now = Date.now();
   const cur = readJson(LEADER_PATH);
-  if (!cur || cur.pid === process.pid || now - cur.at > 20000) {
-    try { fs.writeFileSync(LEADER_PATH, JSON.stringify({ pid: process.pid, at: now }), 'utf-8'); } catch (e) {}
-    const check = readJson(LEADER_PATH);
-    isLeader = !check || check.pid === process.pid;
-  } else {
+  const curStarted = cur && typeof cur.started === 'number' ? cur.started : 0; // old versions wrote no start time
+  if (cur && cur.id && cur.id !== INSTANCE_ID && curStarted > INSTANCE_STARTED && now - cur.at <= 20000) {
+    log('[INSTANCE] A newer copy of the bot is running. This old copy is shutting down.', 'WARNING');
+    setTimeout(() => process.exit(0), 500);
     isLeader = false;
+    return false;
   }
+  try { fs.writeFileSync(LEADER_PATH, JSON.stringify({ id: INSTANCE_ID, started: INSTANCE_STARTED, pid: process.pid, at: now }), 'utf-8'); } catch (e) {}
+  const check = readJson(LEADER_PATH);
+  isLeader = !check || check.id === INSTANCE_ID;
   return isLeader;
 }
 
@@ -1046,7 +1054,7 @@ app.get('/api/status', async (req, res) => {
 
   res.json({
     running: readRunning(),
-    instance: { pid: process.pid, trading: isLeader },
+    instance: { id: INSTANCE_ID, trading: isLeader },
     config: publicConfig(),
     ticker: currentTicker,
     indicators: currentIndicators,
