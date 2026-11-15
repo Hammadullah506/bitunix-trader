@@ -115,7 +115,11 @@
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
     #chart { height: 300px; }
-    @media (max-width: 520px) { #chart { height: 240px; } }
+    #rsi-chart { height: 110px; border-top: 1px solid var(--line); }
+    @media (max-width: 520px) { #chart { height: 240px; } #rsi-chart { height: 90px; } }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 14px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+    .legend b { font-weight: 600; }
+    .sw { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 5px; }
 
     #logs { max-height: 320px; overflow-y: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     #logs div { padding: 3px 14px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -192,8 +196,16 @@
       </section>
 
       <section>
-        <h2>BTC / USDT, 5 minutes</h2>
+        <h2>BTC / USDT, 5 minutes <span class="muted" style="font-weight:400" id="chart-signal"></span></h2>
+        <div class="legend">
+          <span><span class="sw" style="background:#d9a23a"></span>EMA 9 <b id="lg-e9">–</b></span>
+          <span><span class="sw" style="background:#5b8def"></span>EMA 21 <b id="lg-e21">–</b></span>
+          <span><span class="sw" style="background:#b06ad9"></span>EMA 50 <b id="lg-e50">–</b></span>
+          <span>RSI <b id="lg-rsi">–</b></span>
+          <span id="lg-trend"></span>
+        </div>
         <div id="chart"></div>
+        <div id="rsi-chart"></div>
       </section>
 
       <section>
@@ -255,7 +267,7 @@
 
     let running = false;
     let lastData = null;
-    let chart = null, candleSeries = null;
+    let chart = null, candleSeries = null, emaSeries = [], rsiChart = null, rsiSeries = null;
     let editingBasis = false;
 
     async function api(path, body) {
@@ -278,7 +290,50 @@
       candleSeries = chart.addCandlestickSeries({
         upColor: '#2fb37a', downColor: '#e5484d', borderVisible: false, wickUpColor: '#2fb37a', wickDownColor: '#e5484d'
       });
+      emaSeries = ['#d9a23a', '#5b8def', '#b06ad9'].map(color => chart.addLineSeries({ color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }));
       new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth, height: el.clientHeight })).observe(el);
+
+      const rel = $('rsi-chart');
+      rsiChart = LightweightCharts.createChart(rel, {
+        width: rel.clientWidth, height: rel.clientHeight,
+        layout: { background: { color: 'transparent' }, textColor: '#8a94a3', fontSize: 11 },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#1e242c' } },
+        rightPriceScale: { borderColor: '#262d36', scaleMargins: { top: 0.1, bottom: 0.1 } },
+        timeScale: { visible: false },
+        handleScroll: false, handleScale: false
+      });
+      rsiSeries = rsiChart.addLineSeries({ color: '#c8ccd2', lineWidth: 1.5, priceLineVisible: false });
+      rsiSeries.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
+      rsiSeries.createPriceLine({ price: 70, color: '#e5484d', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+      rsiSeries.createPriceLine({ price: 30, color: '#2fb37a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+      new ResizeObserver(() => rsiChart.applyOptions({ width: rel.clientWidth, height: rel.clientHeight })).observe(rel);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) rsiChart.timeScale().setVisibleLogicalRange(r); });
+    }
+
+    // Same maths as the server, so the lines match what the bot sees
+    function emaLine(values, period) {
+      if (values.length < period) return values.map(() => null);
+      const k = 2 / (period + 1);
+      let cur = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      const out = values.map(() => null);
+      out[period - 1] = cur;
+      for (let i = period; i < values.length; i++) { cur = (values[i] - cur) * k + cur; out[i] = cur; }
+      return out;
+    }
+    function rsiLine(values, period = 14) {
+      const out = values.map(() => null);
+      if (values.length <= period) return out;
+      let g = 0, l = 0;
+      for (let i = 1; i <= period; i++) { const d = values[i] - values[i - 1]; if (d > 0) g += d; else l -= d; }
+      g /= period; l /= period;
+      out[period] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+      for (let i = period + 1; i < values.length; i++) {
+        const d = values[i] - values[i - 1];
+        g = (g * (period - 1) + Math.max(d, 0)) / period;
+        l = (l * (period - 1) + Math.max(-d, 0)) / period;
+        out[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+      }
+      return out;
     }
 
     function render(d) {
@@ -377,7 +432,26 @@
 
       // chart
       if (candleSeries && ind.candles && ind.candles.length) {
-        candleSeries.setData(ind.candles.map(c => ({ time: Math.floor(c.time / 1000), open: c.open, high: c.high, low: c.low, close: c.close })));
+        const cs = ind.candles;
+        const times = cs.map(c => Math.floor(c.time / 1000));
+        const closes = cs.map(c => c.close);
+        candleSeries.setData(cs.map((c, i) => ({ time: times[i], open: c.open, high: c.high, low: c.low, close: c.close })));
+        [9, 21, 50].forEach((period, k) => {
+          const line = emaLine(closes, period);
+          emaSeries[k].setData(times.map((t, i) => line[i] == null ? { time: t } : { time: t, value: line[i] }));
+        });
+        const r = rsiLine(closes);
+        rsiSeries.setData(times.map((t, i) => r[i] == null ? { time: t } : { time: t, value: r[i] }));
+      }
+      if (ind.latest_price) {
+        $('lg-e9').textContent = price(ind.ema9);
+        $('lg-e21').textContent = price(ind.ema21);
+        $('lg-e50').textContent = price(ind.ema50);
+        $('lg-rsi').textContent = num(ind.current_rsi).toFixed(1);
+        const btc = (d.multi_coins || {})['BTCUSDT'] || {};
+        $('lg-trend').innerHTML = '1h trend ' + (btc.trend === 1 ? '<b class="up">Up</b>' : btc.trend === -1 ? '<b class="down">Down</b>' : '<b>Flat</b>');
+        const s = btc.signal;
+        $('chart-signal').innerHTML = s === 'BUY' ? '<span class="tag buy">Buy</span>' : s === 'SELL' ? '<span class="tag sell">Sell</span>' : 'Wait';
       }
     }
 

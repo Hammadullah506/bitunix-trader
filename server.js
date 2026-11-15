@@ -484,10 +484,11 @@ async function futuresTick() {
   // Run all coin scans in parallel for ultra-fast response
   const scanPromises = symbolsToScan.map(async (sym) => {
     try {
-      const kRes = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: interval, limit: 50 });
+      const kRes = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: interval, limit: sym === (config.symbol || 'BTCUSDT') ? 120 : 50 });
       if (!kRes || kRes.code !== 0 || !Array.isArray(kRes.data) || kRes.data.length < 20) return null;
 
-      const sorted = [...kRes.data].sort((a, b) => parseInt(a.time) - parseInt(b.time));
+      const allSorted = [...kRes.data].sort((a, b) => parseInt(a.time) - parseInt(b.time));
+      const sorted = allSorted.slice(-50); // signals use exactly the last 50 candles (as tested)
       const closes = sorted.map(c => parseFloat(c.close));
       const rsi = calculateRSI(closes, 14);
       const ema9 = calculateEMA(closes, 9);
@@ -591,7 +592,7 @@ async function futuresTick() {
           ema9: Math.round(cEma9 * 10) / 10,
           ema21: Math.round(cEma21 * 10) / 10,
           ema50: Math.round(cEma50 * 10) / 10,
-          candles: sorted.map(s => ({
+          candles: allSorted.map(s => ({
             time: parseInt(s.time),
             open: parseFloat(s.open),
             high: parseFloat(s.high),
