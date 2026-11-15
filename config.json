@@ -1,6 +1,4 @@
 {
-  "api_key": "81add794b9e4574b7d5219a3727d2911",
-  "secret_key": "2d6ffd217f070f4a2dfdce9ba9a3c2ce",
   "symbol": "BTCUSDT",
   "market_type": "futures",
   "interval": "5m",
@@ -14,7 +12,5 @@
   "paper_balance": 1000.0,
   "check_interval_seconds": 6,
   "rsi_oversold": 30,
-  "rsi_overbought": 70,
-  "telegram_bot_token": "9036982151:AAEuubGBVf722GnWtg-NG2I_w2wyOkdOjwg",
-  "telegram_chat_id": "7955301726"
+  "rsi_overbought": 70
 }

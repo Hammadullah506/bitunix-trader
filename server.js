@@ -7,7 +7,31 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'templates')));
+
+// Dashboard password (HTTP Basic). Without DASHBOARD_PASSWORD the dashboard stays locked.
+const OPEN_PATHS = new Set(['/manifest.json', '/sw.js', '/icon.svg', '/robots.txt']);
+function safeEqual(a, b) {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+app.use((req, res, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  const password = process.env.DASHBOARD_PASSWORD;
+  if (!password) {
+    return res.status(503).type('text/plain').send('Dashboard locked: set DASHBOARD_PASSWORD in the hosting environment variables.');
+  }
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Basic ')) {
+    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf-8');
+    const given = decoded.slice(decoded.indexOf(':') + 1);
+    if (safeEqual(given, password)) return next();
+  }
+  res.setHeader('WWW-Authenticate', 'Basic realm="Bitunix Trader", charset="UTF-8"');
+  res.status(401).type('text/plain').send('Password required');
+});
+
+app.use(express.static(path.join(__dirname, 'templates'), { index: false }));
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
@@ -21,8 +45,8 @@ const COIN_CONFIGS = {
 
 function loadConfig() {
   const defaultCfg = {
-    api_key: "81add794b9e4574b7d5219a3727d2911",
-    secret_key: "2d6ffd217f070f4a2dfdce9ba9a3c2ce",
+    api_key: "",
+    secret_key: "",
     symbol: "BTCUSDT",
     multi_coin_mode: true,
     spot_auto_mode: true,
@@ -39,29 +63,59 @@ function loadConfig() {
     check_interval_seconds: 5,
     rsi_oversold: 30,
     rsi_overbought: 70,
-    telegram_bot_token: "9036982151:AAEuubGBVf722GnWtg-NG2I_w2wyOkdOjwg",
-    telegram_chat_id: "7955301726",
+    telegram_bot_token: "",
+    telegram_chat_id: "",
     today_profit: 0.0,
     daily_goal: 4.0,
     max_concurrent_positions: 1
   };
+  let cfg = defaultCfg;
   if (fs.existsSync(CONFIG_PATH)) {
     try {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-      return { ...defaultCfg, ...data };
+      cfg = { ...defaultCfg, ...data };
     } catch (e) {
       console.error("Config read error:", e);
     }
   }
-  return defaultCfg;
+  return { ...cfg, ...secretsFromEnv() };
+}
+
+// Secrets live ONLY in environment variables (hosting panel), never in git or config.json
+const SECRET_FIELDS = ['api_key', 'secret_key', 'telegram_bot_token'];
+function secretsFromEnv() {
+  return {
+    api_key: process.env.BITUNIX_API_KEY || "",
+    secret_key: process.env.BITUNIX_SECRET_KEY || "",
+    telegram_bot_token: process.env.TELEGRAM_BOT_TOKEN || "",
+    telegram_chat_id: process.env.TELEGRAM_CHAT_ID || ""
+  };
+}
+
+// Settings the dashboard is allowed to change
+const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
+  'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions'];
+
+// Config as shown to the browser: secrets replaced by a set / not-set flag
+function publicConfig() {
+  const out = { ...config };
+  for (const f of SECRET_FIELDS) out[f] = config[f] ? 'SET' : '';
+  delete out.telegram_chat_id;
+  return out;
 }
 
 let config = loadConfig();
 
 function saveConfig(newCfg) {
-  config = { ...config, ...newCfg };
+  const allowed = {};
+  for (const f of EDITABLE_FIELDS) {
+    if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, f)) allowed[f] = newCfg[f];
+  }
+  config = { ...config, ...allowed };
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    const toDisk = { ...config };
+    for (const f of [...SECRET_FIELDS, 'telegram_chat_id']) delete toDisk[f];
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(toDisk, null, 2), 'utf-8');
   } catch (e) {
     console.error("Config save error:", e);
   }
@@ -481,6 +535,15 @@ async function futuresTick() {
       const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
       let slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
 
+      const needMargin = (parseFloat(qty) * price) / parseFloat(config.leverage || 10);
+      const haveMargin = await futuresAvailable();
+      if (haveMargin !== null && haveMargin < needMargin * 1.05) {
+        if (scanTickCount % 12 === 0) {
+          log(`[SKIP] ${sym} ${side}: needs ~$${needMargin.toFixed(2)} margin, futures wallet has $${haveMargin.toFixed(2)}`, 'WARNING');
+        }
+        continue;
+      }
+
       log(`[MULTI-SNIPER] Opening concurrent trade on ${sym} (${activePositions.length + 1}/${maxActivePositions} slots). Executing ${side} ${qty} @ ~$${price}`, 'INFO');
 
       const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
@@ -500,9 +563,17 @@ async function futuresTick() {
         activePositions.push({ symbol: sym, qty: qty, avgOpenPrice: price, side: side });
         log(`[LIVE MULTI] Concurrent Order Placed: ${side} ${qty} ${sym}!`, 'SUCCESS');
         sendTelegramAlert(`⚡ *CONCURRENT MULTI-TRADE EXECUTED!*\n\n• *Coin:* ${sym} (${COIN_CONFIGS[sym].name})\n• *Action:* ${side} (Market)\n• *Size:* ${qty}\n• *Entry:* ~$${price}\n• *🛑 Fixed Stop:* $${slPrice} (-${config.fixed_stop_loss_pct}%)\n• *Active Positions:* ${activePositions.length}/${maxActivePositions} Slots In Play\n\n_Parallel multi-coin execution active!_`);
+      } else {
+        log(`[ORDER FAILED] ${side} ${qty} ${sym}: ${orderRes ? `${orderRes.code} ${orderRes.msg}` : 'no response'}`, 'ERROR');
       }
     }
   }
+}
+
+async function futuresAvailable() {
+  const acc = await bitunixRequest('GET', '/api/v1/futures/account', { marginCoin: 'USDT' }, null, true);
+  if (acc && acc.code === 0 && acc.data) return parseFloat(acc.data.available || 0);
+  return null;
 }
 
 async function closeSpecificPosition(p) {
@@ -645,8 +716,8 @@ app.get('/llms.txt', (req, res) => {
 - Tracks spot holdings and auto-sells at +1.2% bounce
 - Dashboard shows live PnL, candlestick chart, wallet balances
 
-## API Endpoints (read-only public)
-- GET /api/status — live bot status, positions, signals, logs, balances
+## API
+- All /api endpoints require the dashboard password.
 
 ## Owner
 - Malik Hammad Digital
@@ -662,16 +733,7 @@ app.get('/.well-known/mcp/server-card.json', (req, res) => {
     version: "2.0.0",
     description: "Automated crypto futures trading bot with RSI/EMA signals. Read live status, positions, and market signals.",
     endpoint: "https://trade.malikhammaddigital.com/api",
-    capabilities: {
-      tools: [
-        {
-          name: "get_status",
-          description: "Get live bot status, active positions, market signals, wallet balances, and recent logs.",
-          endpoint: "/api/status",
-          method: "GET"
-        }
-      ]
-    },
+    capabilities: { tools: [] },
     contact: { url: "https://t.me/Hammadmaliktrader_bot" },
     source: "https://github.com/Hammadullah506/bitunix-trader"
   });
@@ -698,7 +760,7 @@ app.get('/api/status', async (req, res) => {
 
   res.json({
     running: isRunning,
-    config: config,
+    config: publicConfig(),
     ticker: currentTicker,
     indicators: currentIndicators,
     last_signal: lastSignal,
@@ -712,7 +774,7 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
-app.get('/api/config', (req, res) => res.json(config));
+app.get('/api/config', (req, res) => res.json(publicConfig()));
 
 // Telegram test endpoint — server se directly bhejta hai
 app.get('/api/test_telegram', async (req, res) => {
@@ -751,6 +813,37 @@ app.post('/api/stop', (req, res) => {
   log("Bot Stopped", "INFO");
   sendTelegramAlert("🛑 *Bot Stopped!* Auto-Trading paused.");
   res.json({ code: 0 });
+});
+
+app.post('/api/manual_trade', async (req, res) => {
+  const side = String((req.body && req.body.side) || '').toUpperCase();
+  if (side !== 'BUY' && side !== 'SELL') return res.json({ code: -1, msg: "Side must be BUY or SELL" });
+  const sym = config.symbol || 'BTCUSDT';
+  const coin = COIN_CONFIGS[sym];
+  const price = multiCoinScanner[sym] ? multiCoinScanner[sym].price : null;
+  if (!coin || !price) return res.json({ code: -1, msg: "No live price yet, try again in a few seconds" });
+
+  const needMargin = (parseFloat(coin.qty) * price) / parseFloat(config.leverage || 10);
+  const haveMargin = await futuresAvailable();
+  if (haveMargin !== null && haveMargin < needMargin * 1.05) {
+    return res.json({ code: -1, msg: `Not enough futures balance: need ~$${needMargin.toFixed(2)}, have $${haveMargin.toFixed(2)}` });
+  }
+
+  const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
+  const slPrice = side === 'BUY' ? Math.round(price * (1 - slPct) * 100) / 100 : Math.round(price * (1 + slPct) * 100) / 100;
+  const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
+    effect: 'GTC', orderType: 'MARKET', qty: String(coin.qty), side: side, symbol: sym, tradeSide: 'OPEN',
+    slPrice: String(slPrice), slOrderType: 'MARKET', slStopType: 'LAST_PRICE'
+  }, true);
+
+  if (orderRes && orderRes.code === 0) {
+    log(`[MANUAL] ${side} ${coin.qty} ${sym} placed @ ~$${price}`, 'SUCCESS');
+    sendTelegramAlert(`✋ *Manual ${side}* ${coin.qty} ${sym} @ ~$${price} (SL $${slPrice})`);
+    return res.json({ code: 0, msg: `Manual ${side} placed` });
+  }
+  const why = orderRes ? `${orderRes.code} ${orderRes.msg}` : 'no response';
+  log(`[MANUAL ORDER FAILED] ${side} ${coin.qty} ${sym}: ${why}`, 'ERROR');
+  res.json({ code: -1, msg: `Order failed: ${why}` });
 });
 
 app.post('/api/close_position', async (req, res) => {
