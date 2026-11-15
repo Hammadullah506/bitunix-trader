@@ -347,6 +347,10 @@ const STATE_DIR = (() => {
 const STATE_PATH = path.join(STATE_DIR, '.bitunix-trader-state.json');
 const LEADER_PATH = path.join(STATE_DIR, '.bitunix-trader-leader.json');
 const SPOT_PATH = path.join(STATE_DIR, '.bitunix-trader-spot.json');
+const TRACKERS_PATH = path.join(STATE_DIR, '.bitunix-trader-positions.json');
+function saveTrackers() {
+  try { fs.writeFileSync(TRACKERS_PATH, JSON.stringify(positionTrackers), 'utf-8'); } catch (e) {}
+}
 
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch (e) { return null; }
@@ -418,7 +422,7 @@ function spotSummary() {
     };
   }).filter(h => parseFloat(h.balance || 0) > 0);
 }
-let positionTrackers = {};
+let positionTrackers = readJson(TRACKERS_PATH) || {}; // survives restarts
 let totalRealizedProfitToday = 0.0;
 let latestFuturesCash = "9.95";
 let scanTickCount = 0;
@@ -741,6 +745,8 @@ async function futuresTick() {
       continue;
     }
   }
+
+  saveTrackers(); // keep each trade's best profit across restarts, so trailing exits stay correct
 
   // 3. Multi-Coin Concurrent Trades (Up to 3 Simultaneous Positions on Distinct Coins)
   const maxActivePositions = parseInt(config.max_concurrent_positions || 1);
