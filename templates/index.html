@@ -55,6 +55,10 @@
     button:hover, .btn:hover { border-color: #3a4350; }
     button.primary { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
     button.danger { color: var(--down); }
+    button.go { background: var(--up); border-color: var(--up); color: #06130d; font-weight: 600; }
+    button.go:hover { border-color: #3fd193; background: #3fd193; }
+    button.halt { background: var(--down); border-color: var(--down); color: #fff; font-weight: 600; }
+    button.halt:hover { border-color: #f0646a; background: #f0646a; }
     button.small { padding: 5px 10px; min-height: 30px; font-size: 13px; }
     button:disabled { opacity: .5; cursor: default; }
     @media (max-width: 520px) {
@@ -143,7 +147,7 @@
       <div class="brand"><span class="hide-sm">Bitunix </span>Trader</div>
       <div class="state"><span class="dot" id="dot"></span><span id="state-text">Loading</span></div>
       <div class="spacer"></div>
-      <button id="btn-toggle" class="primary" disabled>Start</button>
+      <button id="btn-toggle" class="go" disabled>Start</button>
       <button id="btn-sound" title="Sound and pop-up alerts for signals and trades">Alerts off</button>
       <button id="btn-settings">Settings</button>
       <a class="btn hide-sm" href="/logout">Log out</a>
@@ -180,8 +184,8 @@
       <section>
         <h2>Open trades
           <span class="row">
-            <button class="small" id="btn-buy">Buy BTC</button>
-            <button class="small" id="btn-sell">Sell BTC</button>
+            <button class="small go" id="btn-buy">Buy BTC</button>
+            <button class="small halt" id="btn-sell">Sell BTC</button>
           </span>
         </h2>
         <div class="body" id="positions"><div class="empty">No open trade.</div></div>
@@ -289,7 +293,7 @@
       const t = $('btn-toggle');
       t.disabled = false;
       t.textContent = running ? 'Stop' : 'Start';
-      t.className = running ? 'danger' : 'primary';
+      t.className = running ? 'halt' : 'go';
 
       // notice
       const n = $('notice');
@@ -336,7 +340,7 @@
             <div class="muted num" style="font-size:13px">Entry ${price(p.avgOpenPrice)} · Size ${esc(p.qty)} · Margin ${usd(p.margin)}</div></div>
           <div><div class="pl num ${cls(net)}">${signed(net, 3)}</div><div class="muted num" style="font-size:12px">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}% after fees</div></div>
         </div>`;
-      }).join('') + '<div class="row" style="margin-top:10px"><button class="small danger" id="btn-close">Close all trades</button></div>'
+      }).join('') + '<div class="row" style="margin-top:10px"><button class="small halt" id="btn-close">Close all trades</button></div>'
         : '<div class="empty">No open trade.</div>';
       const closeBtn = $('btn-close');
       if (closeBtn) closeBtn.onclick = closeAll;
