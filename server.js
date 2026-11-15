@@ -8,27 +8,84 @@ const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
-// Dashboard password (HTTP Basic). Without DASHBOARD_PASSWORD the dashboard stays locked.
-const OPEN_PATHS = new Set(['/manifest.json', '/sw.js', '/icon.svg', '/robots.txt']);
+app.use(express.urlencoded({ extended: false }));
+
+// Dashboard login. Without DASHBOARD_PASSWORD the dashboard stays locked.
+const OPEN_PATHS = new Set(['/manifest.json', '/sw.js', '/icon.svg', '/robots.txt', '/login']);
+const SESSION_COOKIE = 'bx_session';
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
   const hb = crypto.createHash('sha256').update(String(b)).digest();
   return crypto.timingSafeEqual(ha, hb);
 }
+function sessionToken(password) {
+  return crypto.createHmac('sha256', password).update('bitunix-dashboard-session-v1').digest('hex');
+}
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const idx = part.indexOf('=');
+    if (idx > 0 && part.slice(0, idx).trim() === name) return part.slice(idx + 1).trim();
+  }
+  return '';
+}
+function isLoggedIn(req, password) {
+  const cookie = readCookie(req, SESSION_COOKIE);
+  if (cookie && safeEqual(cookie, sessionToken(password))) return true;
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Basic ')) {
+    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf-8');
+    if (safeEqual(decoded.slice(decoded.indexOf(':') + 1), password)) return true;
+  }
+  return false;
+}
+function loginPage(message) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Bitunix Trader</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+form{width:min(340px,calc(100vw - 32px));background:#121722;border:1px solid #1e2634;border-radius:12px;padding:24px;box-sizing:border-box}
+h1{font-size:18px;margin:0 0 16px}
+input{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid #2d3748;background:#0b0e14;color:#e2e8f0;font-size:16px}
+button{width:100%;margin-top:12px;padding:12px;border:0;border-radius:8px;background:#00d68f;color:#000;font-weight:700;font-size:16px}
+p{color:#f6465d;font-size:14px;margin:12px 0 0}
+</style></head><body>
+<form method="POST" action="/login">
+<h1>Bitunix Trader</h1>
+<input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+<button type="submit">Login</button>
+${message ? `<p>${message}</p>` : ''}
+</form></body></html>`;
+}
+
+app.get('/login', (req, res) => {
+  const password = process.env.DASHBOARD_PASSWORD;
+  if (!password) return res.status(503).send(loginPage('Dashboard locked: DASHBOARD_PASSWORD is not set on the server.'));
+  if (isLoggedIn(req, password)) return res.redirect('/');
+  res.send(loginPage(''));
+});
+
+app.post('/login', async (req, res) => {
+  const password = process.env.DASHBOARD_PASSWORD;
+  if (!password) return res.status(503).send(loginPage('Dashboard locked: DASHBOARD_PASSWORD is not set on the server.'));
+  const given = String((req.body && req.body.password) || '');
+  if (!safeEqual(given, password)) {
+    await new Promise(r => setTimeout(r, 1500)); // slow down guessing
+    return res.status(401).send(loginPage('Wrong password'));
+  }
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${sessionToken(password)}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`);
+  res.redirect('/');
+});
+
 app.use((req, res, next) => {
   if (OPEN_PATHS.has(req.path)) return next();
   const password = process.env.DASHBOARD_PASSWORD;
   if (!password) {
     return res.status(503).type('text/plain').send('Dashboard locked: set DASHBOARD_PASSWORD in the hosting environment variables.');
   }
-  const header = req.headers.authorization || '';
-  if (header.startsWith('Basic ')) {
-    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf-8');
-    const given = decoded.slice(decoded.indexOf(':') + 1);
-    if (safeEqual(given, password)) return next();
-  }
-  res.setHeader('WWW-Authenticate', 'Basic realm="Bitunix Trader", charset="UTF-8"');
-  res.status(401).type('text/plain').send('Password required');
+  if (isLoggedIn(req, password)) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ code: 401, msg: 'Login required' });
+  res.redirect('/login');
 });
 
 app.use(express.static(path.join(__dirname, 'templates'), { index: false }));
@@ -67,7 +124,12 @@ function loadConfig() {
     telegram_chat_id: "",
     today_profit: 0.0,
     daily_goal: 4.0,
-    max_concurrent_positions: 1
+    max_concurrent_positions: 1,
+    taker_fee_pct: 0.06,          // exchange fee per side, % of position size
+    take_profit_net_pct: 3.0,     // start locking profit at this % of margin AFTER fees
+    trailing_drop_net_pct: 1.0,   // close when profit falls this far from its peak
+    stop_loss_margin_pct: 4.0,    // cut a loser at this % of margin
+    max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
   if (fs.existsSync(CONFIG_PATH)) {
@@ -94,7 +156,8 @@ function secretsFromEnv() {
 
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
-  'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions'];
+  'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
+  'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'stop_loss_margin_pct', 'max_daily_loss_usd'];
 
 // Config as shown to the browser: secrets replaced by a set / not-set flag
 function publicConfig() {
@@ -265,6 +328,55 @@ let positionTrackers = {};
 let totalRealizedProfitToday = 0.0;
 let latestFuturesCash = "9.95";
 let scanTickCount = 0;
+
+// Risk guard state
+let dayKey = null;            // current trading day (Pakistan time)
+let dayStartEquity = null;    // futures equity at the start of the day
+let dailyPnl = 0;             // real change in futures equity today (fees included)
+let guardReason = null;       // 'loss' | 'goal' | null — when set, no new trades are opened
+let lastEntryAt = 0;          // time of the last opened trade
+let symbolCooldownUntil = {}; // symbol -> time before which it is not traded again
+
+function tradingDay() {
+  return new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+// Measures today's real result from the futures wallet itself, so fees and
+// exchange-side stop-losses are counted too.
+async function updateDailyGuard() {
+  const acc = await bitunixRequest('GET', '/api/v1/futures/account', { marginCoin: 'USDT' }, null, true);
+  if (!acc || acc.code !== 0 || !acc.data) return null;
+  const d = acc.data;
+  const num = (v) => parseFloat(v || 0) || 0;
+  const equity = num(d.available) + num(d.frozen) + num(d.margin) + num(d.crossUnrealizedPNL) + num(d.isolationUnrealizedPNL);
+
+  const today = tradingDay();
+  if (dayKey !== today || dayStartEquity === null) {
+    dayKey = today;
+    dayStartEquity = equity;
+    guardReason = null;
+    log(`[DAILY GUARD] New baseline: $${equity.toFixed(2)} futures equity`, 'INFO');
+  }
+  dailyPnl = equity - dayStartEquity;
+
+  const maxLoss = parseFloat(config.max_daily_loss_usd || 1.5);
+  const goal = parseFloat(config.daily_goal || 4);
+  let reason = null;
+  if (dailyPnl <= -maxLoss) reason = 'loss';
+  else if (dailyPnl >= goal) reason = 'goal';
+
+  if (reason && guardReason !== reason) {
+    if (reason === 'loss') {
+      log(`[DAILY GUARD] Loss limit hit ($${dailyPnl.toFixed(2)}). No new trades today.`, 'WARNING');
+      sendTelegramAlert(`🛑 *Daily loss limit reached*\n\nToday: $${dailyPnl.toFixed(2)} USDT\nNo new trades until tomorrow. Open positions are still managed.`);
+    } else {
+      log(`[DAILY GUARD] Daily goal reached (+$${dailyPnl.toFixed(2)}). No new trades today.`, 'SUCCESS');
+      sendTelegramAlert(`🎯 *Daily goal reached*\n\nToday: +$${dailyPnl.toFixed(2)} USDT\nNo new trades until tomorrow, profit is kept.`);
+    }
+  }
+  guardReason = reason;
+  return num(d.available);
+}
 
 function log(message, level = 'INFO') {
   const entry = {
@@ -442,77 +554,63 @@ async function futuresTick() {
         log(`[POSITION CLOSED] ${trk.symbol} trade closed. Sending Telegram confirmation...`, 'INFO');
         sendTelegramAlert(`🛡️ *POSITION CLOSED & SETTLED*\n\n• *Symbol:* ${trk.symbol || 'Crypto'}\n• *Side:* ${(trk.side || 'BUY').toUpperCase()}\n• *Entry:* ~$${trk.entryPrice || '-'}\n• *Status:* Position successfully closed & margin released back to wallet.\n• *Current Cash:* $${latestFuturesCash} USDT (100% Capital Safe)\n\n_Scanning next sniper setup..._`);
       }
+      if (trk) symbolCooldownUntil[trk.symbol] = Date.now() + 10 * 60 * 1000; // closed by the exchange stop: rest this coin
       delete positionTrackers[id];
     }
   }
 
-  // Strategic Dynamic Profit Runner & Strict Loss Protection (Using Real Exchange PnL)
+  const availableNow = await updateDailyGuard();
+
+  // Position management. Profit and loss are judged AFTER exchange fees, so a "win" is a real win.
+  const feeRate = parseFloat(config.taker_fee_pct ?? 0.06) / 100;
+  const tpNetPct = parseFloat(config.take_profit_net_pct ?? 3);
+  const trailDropPct = parseFloat(config.trailing_drop_net_pct ?? 1);
+  const slMarginPct = parseFloat(config.stop_loss_margin_pct ?? 4);
+
   for (const pos of activePositions) {
     const posId = String(pos.positionId);
     const entryPrice = parseFloat(pos.avgOpenPrice || 0);
     const pnlUsd = parseFloat(pos.unrealizedPNL || 0);
     const marginUsd = parseFloat(pos.margin || 1.8);
-    const actualPnlPct = marginUsd > 0 ? (pnlUsd / marginUsd) * 100 : 0; // Leveraged PnL %
+    const feesUsd = parseFloat(pos.qty || 0) * entryPrice * feeRate * 2; // open + close
+    const netUsd = pnlUsd - feesUsd;
+    const grossPct = marginUsd > 0 ? (pnlUsd / marginUsd) * 100 : 0;
+    const netPct = marginUsd > 0 ? (netUsd / marginUsd) * 100 : 0;
 
     if (!positionTrackers[posId]) {
       positionTrackers[posId] = {
         symbol: pos.symbol,
         entryPrice: entryPrice,
         side: pos.side,
-        maxPnlUsd: pnlUsd,
-        maxPnlPct: actualPnlPct,
-        notifiedRide: false,
-        closedNotified: false,
-        profitTargetHitTime: null  // 1% confirmation timer
+        maxNetPct: netPct,
+        closedNotified: false
       };
     }
-
     const tracker = positionTrackers[posId];
-    if (pnlUsd > tracker.maxPnlUsd) {
-      tracker.maxPnlUsd = pnlUsd;
-      tracker.maxPnlPct = actualPnlPct;
-    }
+    if (netPct > tracker.maxNetPct) tracker.maxNetPct = netPct;
 
-    // 1. Strict Real Loss Protection: Cut only on genuine -$0.09 USDT (or -5% margin loss)
-    if (pnlUsd <= -0.05 || actualPnlPct <= -4.0) {
-      log(`[STRICT SL CUT] ${pos.symbol} hit actual -$${Math.abs(pnlUsd).toFixed(4)} USDT loss! Exiting...`, 'WARNING');
+    // 1. Stop loss
+    if (grossPct <= -slMarginPct) {
+      log(`[STOP LOSS] ${pos.symbol} ${grossPct.toFixed(2)}% of margin (net -$${Math.abs(netUsd).toFixed(4)} after fees). Closing.`, 'WARNING');
       tracker.closedNotified = true;
       await closeSpecificPosition(pos);
       delete positionTrackers[posId];
-      sendTelegramAlert(`🛑 *FIXED STOP LOSS CUT*\n\n• *Symbol:* ${pos.symbol}\n• *Reason:* Real exchange loss limit reached\n• *Closed Loss:* -$${Math.abs(pnlUsd).toFixed(4)} USDT\n\n_Capital preserved._`);
+      symbolCooldownUntil[pos.symbol] = Date.now() + 15 * 60 * 1000;
+      sendTelegramAlert(`🛑 *Stop loss* ${pos.symbol}\nResult after fees: -$${Math.abs(netUsd).toFixed(4)} USDT\nThis coin rests for 15 minutes.`);
       continue;
     }
 
-    // 2. 1% Profit → Close Immediately (no wait — market fast hai)
-    if (actualPnlPct >= 1.0) {
-      log(`[PROFIT LOCK] ${pos.symbol} +${actualPnlPct.toFixed(2)}% — closing immediately!`, 'SUCCESS');
-      tracker.closedNotified = true;
-      await closeSpecificPosition(pos);
-      totalRealizedProfitToday += pnlUsd;
-      delete positionTrackers[posId];
-      sendTelegramAlert(`Profit Locked! ${pos.symbol}\nProfit: +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(2)}% ROI)\nEntry: $${entryPrice}\nNext setup loading...`);
-      continue;
-    }
-
-    // 3. Deep Trailing Runner (for positions that spike past 2.5% — bonus catcher)
-    if (pnlUsd >= 0.04 || actualPnlPct >= 2.5) {
-      if (actualPnlPct >= 8.0 && !tracker.notifiedRide) {
-        tracker.notifiedRide = true;
-        sendTelegramAlert(`🚀 *PROFIT RUNNER ACTIVE!*\n\n• *Symbol:* ${pos.symbol}\n• *Current Gain:* +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(1)}%)\n• *Status:* Profit is uncapped — letting winner run higher! 📈`);
-      }
-
-      // Trailing lock: If profit pulls back from peak by more than $0.02, secure it!
-      const peakDropUsd = tracker.maxPnlUsd - pnlUsd;
-      const isRunner = actualPnlPct >= 8.0;
-      const allowableDrop = isRunner ? Math.max(0.04, tracker.maxPnlUsd * 0.25) : 0.02;
-
-      if (peakDropUsd >= allowableDrop && pnlUsd >= 0.03) {
-        log(`[TRAILING LOCK] ${pos.symbol} trailing profit locked +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(1)}% ROI). Rotating!`, 'SUCCESS');
+    // 2. Take profit: once net profit passes the target, let it run and close when it
+    //    falls back from its peak (or close at once if profit riding is off).
+    if (tracker.maxNetPct >= tpNetPct) {
+      const ride = config.dynamic_profit_ride !== false;
+      if (!ride || netPct <= tracker.maxNetPct - trailDropPct) {
+        log(`[PROFIT LOCK] ${pos.symbol} net +$${netUsd.toFixed(4)} (+${netPct.toFixed(2)}% of margin after fees, peak ${tracker.maxNetPct.toFixed(2)}%). Closing.`, 'SUCCESS');
         tracker.closedNotified = true;
         await closeSpecificPosition(pos);
-        totalRealizedProfitToday += pnlUsd;
+        totalRealizedProfitToday += netUsd;
         delete positionTrackers[posId];
-        sendTelegramAlert(`💰 *TRAILING PROFIT LOCKED!*\n\n• *Symbol:* ${pos.symbol}\n• *Profit:* +$${pnlUsd.toFixed(4)} USDT (+${actualPnlPct.toFixed(1)}% ROI) 💵\n• *Entry:* ~$${entryPrice}\n\n_Profit secured directly into wallet!_`);
+        sendTelegramAlert(`💰 *Profit locked* ${pos.symbol}\nNet after fees: +$${netUsd.toFixed(4)} USDT (+${netPct.toFixed(2)}% of margin)\nEntry: $${entryPrice}`);
         continue;
       }
     }
@@ -522,10 +620,12 @@ async function futuresTick() {
   const maxActivePositions = parseInt(config.max_concurrent_positions || 1);
   const currentActiveSymbols = new Set(activePositions.map(p => p.symbol));
 
-  if (isRunning && activePositions.length < maxActivePositions && candidates.length > 0) {
+  const entryCooldownOver = Date.now() - lastEntryAt >= 60 * 1000; // exchange needs a moment to list a new position
+  if (isRunning && !guardReason && entryCooldownOver && activePositions.length < maxActivePositions && candidates.length > 0) {
     for (const opp of candidates) {
       if (activePositions.length >= maxActivePositions) break;
       if (currentActiveSymbols.has(opp.symbol)) continue; // Never duplicate position on same coin
+      if ((symbolCooldownUntil[opp.symbol] || 0) > Date.now()) continue; // resting after a loss
 
       const sym = opp.symbol;
       const side = opp.signal;
@@ -536,7 +636,7 @@ async function futuresTick() {
       const slPrice = stopLossPrice(side, price, slPct);
 
       const needMargin = (parseFloat(qty) * price) / parseFloat(config.leverage || 10);
-      const haveMargin = await futuresAvailable();
+      const haveMargin = availableNow;
       if (haveMargin !== null && haveMargin < needMargin * 1.05) {
         if (scanTickCount % 12 === 0) {
           log(`[SKIP] ${sym} ${side}: needs ~$${needMargin.toFixed(2)} margin, futures wallet has $${haveMargin.toFixed(2)}`, 'WARNING');
@@ -559,6 +659,7 @@ async function futuresTick() {
       }, true);
 
       if (orderRes && orderRes.code === 0) {
+        lastEntryAt = Date.now();
         currentActiveSymbols.add(sym);
         activePositions.push({ symbol: sym, qty: qty, avgOpenPrice: price, side: side });
         log(`[LIVE MULTI] Concurrent Order Placed: ${side} ${qty} ${sym}!`, 'SUCCESS');
@@ -613,7 +714,7 @@ async function spotTick() {
     const usdtCoin = sAcc.data.find(c => c.coin === 'USDT');
     const usdtBal = usdtCoin ? parseFloat(usdtCoin.balance || 0) : 0;
 
-    if (usdtBal >= 5.0) {
+    if (usdtBal >= 5.0 && !guardReason) {
       for (const sym of ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']) {
         const scanner = multiCoinScanner[sym];
         if (scanner && scanner.rsi && scanner.rsi <= 30) {
@@ -781,7 +882,15 @@ app.get('/api/status', async (req, res) => {
     live_balance: liveBal,
     spot_balance: spotBalance,
     live_positions: livePositions,
-    total_realized_today: totalRealizedProfitToday,
+    total_realized_today: dailyPnl,
+    daily_guard: {
+      day: dayKey,
+      start_equity: dayStartEquity,
+      pnl: dailyPnl,
+      paused: guardReason,
+      max_daily_loss_usd: parseFloat(config.max_daily_loss_usd || 1.5),
+      daily_goal: parseFloat(config.daily_goal || 4)
+    },
     logs: logs
   });
 });
@@ -815,6 +924,7 @@ app.post('/api/config', (req, res) => {
 
 app.post('/api/start', (req, res) => {
   isRunning = true;
+  dayStartEquity = null; // pressing Start re-measures today's baseline (use after a deposit or withdrawal)
   log("Bot Started", "INFO");
   sendTelegramAlert("🟢 *Strategic Bot Started!* Uncapped Profit Runner active on 5 markets.");
   res.json({ code: 0 });
