@@ -52,7 +52,8 @@ p{color:#f6465d;font-size:14px;margin:12px 0 0}
 </style></head><body>
 <form method="POST" action="/login">
 <h1>Bitunix Trader</h1>
-<input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+<input type="password" id="pw" name="password" placeholder="Password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus required>
+<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:#94a3b8"><input type="checkbox" style="width:auto" onclick="document.getElementById('pw').type=this.checked?'text':'password'"> Show password</label>
 <button type="submit">Login</button>
 ${message ? `<p>${message}</p>` : ''}
 </form></body></html>`;
@@ -62,6 +63,9 @@ app.get('/login', (req, res) => {
   const password = (process.env.DASHBOARD_PASSWORD || '').trim();
   if (!password) return res.status(503).send(loginPage('Dashboard locked: DASHBOARD_PASSWORD is not set on the server.'));
   if (isLoggedIn(req, password)) return res.redirect('/');
+  // Drop any old cached pages / service worker a phone may still hold from earlier versions
+  res.setHeader('Clear-Site-Data', '"cache", "storage"');
+  res.setHeader('Cache-Control', 'no-store');
   res.send(loginPage(''));
 });
 
@@ -126,9 +130,12 @@ function loadConfig() {
     daily_goal: 4.0,
     max_concurrent_positions: 1,
     taker_fee_pct: 0.06,          // exchange fee per side, % of position size
-    take_profit_net_pct: 3.0,     // start locking profit at this % of margin AFTER fees
-    trailing_drop_net_pct: 1.0,   // close when profit falls this far from its peak
-    stop_loss_margin_pct: 4.0,    // cut a loser at this % of margin
+    take_profit_net_pct: 15.0,    // start trailing profit at this % of margin AFTER fees
+    trailing_drop_net_pct: 5.0,   // then close when profit falls this far from its peak
+    protect_arm_net_pct: 10.0,    // once profit has reached this...
+    protect_floor_net_pct: 3.0,   // ...never let it fall below this: close and keep the gain
+    stop_loss_margin_pct: 10.0,   // cut a loser at this % of margin
+    strategy_version: 2,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
@@ -136,6 +143,11 @@ function loadConfig() {
     try {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
       cfg = { ...defaultCfg, ...data };
+      // Settings saved by an older strategy version would undo the tested exit rules
+      if (data.strategy_version !== defaultCfg.strategy_version) {
+        for (const k of ['take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
+          'stop_loss_margin_pct', 'strategy_version']) cfg[k] = defaultCfg[k];
+      }
     } catch (e) {
       console.error("Config read error:", e);
     }
@@ -157,7 +169,8 @@ function secretsFromEnv() {
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
-  'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'stop_loss_margin_pct', 'max_daily_loss_usd'];
+  'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
+  'stop_loss_margin_pct', 'max_daily_loss_usd'];
 
 // Config as shown to the browser: secrets replaced by a set / not-set flag
 function publicConfig() {
@@ -315,8 +328,48 @@ function calculateRSI(prices, period = 14) {
   return rsi;
 }
 
+// Running flag and leader lock live in files outside the app folder, so that
+// (a) Stop survives restarts and redeploys, and (b) if the host starts several
+// copies of this app, they all obey the same Stop and only one of them trades.
+const os = require('os');
+const STATE_DIR = (() => {
+  for (const dir of [os.homedir(), __dirname, os.tmpdir()]) {
+    try { fs.accessSync(dir, fs.constants.W_OK); return dir; } catch (e) {}
+  }
+  return __dirname;
+})();
+const STATE_PATH = path.join(STATE_DIR, '.bitunix-trader-state.json');
+const LEADER_PATH = path.join(STATE_DIR, '.bitunix-trader-leader.json');
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch (e) { return null; }
+}
+function readRunning() {
+  const st = readJson(STATE_PATH);
+  return st && typeof st.running === 'boolean' ? st.running : true;
+}
+function writeRunning(value) {
+  try { fs.writeFileSync(STATE_PATH, JSON.stringify({ running: value, at: new Date().toISOString() }), 'utf-8'); } catch (e) {
+    console.error('State save error:', e.message);
+  }
+}
+// Only the process holding a fresh leader lock may place or close orders.
+let isLeader = false;
+function claimLeadership() {
+  const now = Date.now();
+  const cur = readJson(LEADER_PATH);
+  if (!cur || cur.pid === process.pid || now - cur.at > 20000) {
+    try { fs.writeFileSync(LEADER_PATH, JSON.stringify({ pid: process.pid, at: now }), 'utf-8'); } catch (e) {}
+    const check = readJson(LEADER_PATH);
+    isLeader = !check || check.pid === process.pid;
+  } else {
+    isLeader = false;
+  }
+  return isLeader;
+}
+
 // State
-let isRunning = true;
+let isRunning = readRunning();
 let logs = [];
 let currentTicker = { last: '65500', high: '69000', low: '64800' };
 let currentIndicators = {};
@@ -471,8 +524,17 @@ async function futuresTick() {
         confidence = 80;
       }
 
+      // Only trade in the direction of the 1-hour trend
+      const trend = await hourlyTrend(sym, latestPrice);
+      if (sig !== 'HOLD' && trend !== (sig === 'BUY' ? 1 : -1)) {
+        reason = `${sig} signal skipped: 1h trend is ${trend === 1 ? 'up' : trend === -1 ? 'down' : 'flat'}`;
+        sig = 'HOLD';
+        confidence = 40;
+      }
+
       multiCoinScanner[sym] = {
         symbol: sym,
+        trend: trend,
         name: COIN_CONFIGS[sym].name,
         price: latestPrice,
         rsi: currRsi,
@@ -563,9 +625,11 @@ async function futuresTick() {
 
   // Position management. Profit and loss are judged AFTER exchange fees, so a "win" is a real win.
   const feeRate = parseFloat(config.taker_fee_pct ?? 0.06) / 100;
-  const tpNetPct = parseFloat(config.take_profit_net_pct ?? 3);
-  const trailDropPct = parseFloat(config.trailing_drop_net_pct ?? 1);
-  const slMarginPct = parseFloat(config.stop_loss_margin_pct ?? 4);
+  const tpNetPct = parseFloat(config.take_profit_net_pct ?? 15);
+  const trailDropPct = parseFloat(config.trailing_drop_net_pct ?? 5);
+  const protectArmPct = parseFloat(config.protect_arm_net_pct ?? 10);
+  const protectFloorPct = parseFloat(config.protect_floor_net_pct ?? 3);
+  const slMarginPct = parseFloat(config.stop_loss_margin_pct ?? 10);
 
   for (const pos of activePositions) {
     const posId = String(pos.positionId);
@@ -613,6 +677,15 @@ async function futuresTick() {
         sendTelegramAlert(`💰 *Profit locked* ${pos.symbol}\nNet after fees: +$${netUsd.toFixed(4)} USDT (+${netPct.toFixed(2)}% of margin)\nEntry: $${entryPrice}`);
         continue;
       }
+    } else if (protectArmPct > 0 && tracker.maxNetPct >= protectArmPct && netPct <= protectFloorPct) {
+      // 3. Profit was good and is now falling back: close while it is still a gain
+      log(`[PROFIT PROTECT] ${pos.symbol} fell from +${tracker.maxNetPct.toFixed(2)}% to +${netPct.toFixed(2)}% of margin. Closing with net $${netUsd.toFixed(4)}.`, 'SUCCESS');
+      tracker.closedNotified = true;
+      await closeSpecificPosition(pos);
+      totalRealizedProfitToday += netUsd;
+      delete positionTrackers[posId];
+      sendTelegramAlert(`🛡️ *Profit protected* ${pos.symbol}\nProfit was falling, closed with net $${netUsd.toFixed(4)} USDT after fees.`);
+      continue;
     }
   }
 
@@ -632,7 +705,7 @@ async function futuresTick() {
       const price = opp.price;
       const qty = opp.qty;
 
-      const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
+      const slPct = exchangeStopPct();
       const slPrice = stopLossPrice(side, price, slPct);
 
       const needMargin = (parseFloat(qty) * price) / parseFloat(config.leverage || 10);
@@ -681,6 +754,36 @@ function stopLossPrice(side, price, slPct) {
   // Round away from the entry so the stop is never on the wrong side of the price
   const rounded = side === 'BUY' ? Math.floor(raw * factor) / factor : Math.ceil(raw * factor) / factor;
   return Number(rounded.toFixed(decimals));
+}
+
+// Price distance for the stop order placed on the exchange. It is a backup for when
+// the bot is offline, so it sits 1.5x further away than the bot's own stop loss.
+function exchangeStopPct() {
+  const configured = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100;
+  const botStop = parseFloat(config.stop_loss_margin_pct ?? 10) / 100 / parseFloat(config.leverage || 10);
+  return Math.max(configured, botStop * 1.5);
+}
+
+// 1-hour trend for a coin: +1 up, -1 down, 0 flat/unknown. Trades are only taken with it.
+const hourlyCache = {};
+async function hourlyTrend(sym, price) {
+  const cached = hourlyCache[sym];
+  if (!cached || Date.now() - cached.at > 60 * 1000) {
+    const res = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: '1h', limit: 61 });
+    if (res && res.code === 0 && Array.isArray(res.data) && res.data.length >= 61) {
+      const sorted = [...res.data].sort((a, b) => parseInt(a.time) - parseInt(b.time));
+      hourlyCache[sym] = { at: Date.now(), closes: sorted.slice(0, -1).map(c => parseFloat(c.close)) };
+    } else if (!cached) {
+      return 0;
+    }
+  }
+  const hist = [...hourlyCache[sym].closes, price];
+  const e = calculateEMA(hist, 50);
+  const last = e[e.length - 1];
+  const before = e[e.length - 1 - 5];
+  if (price > last && last > before) return 1;
+  if (price < last && last < before) return -1;
+  return 0;
 }
 
 async function futuresAvailable() {
@@ -777,6 +880,8 @@ async function spotTick() {
 }
 
 async function masterTick() {
+  isRunning = readRunning();
+  if (!claimLeadership()) return; // another copy of the app is doing the trading
   await futuresTick();
   await spotTick();
 }
@@ -872,7 +977,8 @@ app.get('/api/status', async (req, res) => {
   } catch (e) {}
 
   res.json({
-    running: isRunning,
+    running: readRunning(),
+    instance: { pid: process.pid, trading: isLeader },
     config: publicConfig(),
     ticker: currentTicker,
     indicators: currentIndicators,
@@ -924,6 +1030,7 @@ app.post('/api/config', (req, res) => {
 
 app.post('/api/start', (req, res) => {
   isRunning = true;
+  writeRunning(true);
   dayStartEquity = null; // pressing Start re-measures today's baseline (use after a deposit or withdrawal)
   log("Bot Started", "INFO");
   sendTelegramAlert("🟢 *Strategic Bot Started!* Uncapped Profit Runner active on 5 markets.");
@@ -932,6 +1039,7 @@ app.post('/api/start', (req, res) => {
 
 app.post('/api/stop', (req, res) => {
   isRunning = false;
+  writeRunning(false);
   log("Bot Stopped", "INFO");
   sendTelegramAlert("🛑 *Bot Stopped!* Auto-Trading paused.");
   res.json({ code: 0 });
@@ -951,7 +1059,7 @@ app.post('/api/manual_trade', async (req, res) => {
     return res.json({ code: -1, msg: `Not enough futures balance: need ~$${needMargin.toFixed(2)}, have $${haveMargin.toFixed(2)}` });
   }
 
-  const slPct = parseFloat(config.fixed_stop_loss_pct || 0.5) / 100.0;
+  const slPct = exchangeStopPct();
   const slPrice = stopLossPrice(side, price, slPct);
   const orderRes = await bitunixRequest('POST', '/api/v1/futures/trade/place_order', null, {
     effect: 'GTC', orderType: 'MARKET', qty: String(coin.qty), side: side, symbol: sym, tradeSide: 'OPEN',
