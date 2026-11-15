@@ -59,16 +59,16 @@ ${message ? `<p>${message}</p>` : ''}
 }
 
 app.get('/login', (req, res) => {
-  const password = process.env.DASHBOARD_PASSWORD;
+  const password = (process.env.DASHBOARD_PASSWORD || '').trim();
   if (!password) return res.status(503).send(loginPage('Dashboard locked: DASHBOARD_PASSWORD is not set on the server.'));
   if (isLoggedIn(req, password)) return res.redirect('/');
   res.send(loginPage(''));
 });
 
 app.post('/login', async (req, res) => {
-  const password = process.env.DASHBOARD_PASSWORD;
+  const password = (process.env.DASHBOARD_PASSWORD || '').trim();
   if (!password) return res.status(503).send(loginPage('Dashboard locked: DASHBOARD_PASSWORD is not set on the server.'));
-  const given = String((req.body && req.body.password) || '');
+  const given = String((req.body && req.body.password) || '').trim();
   if (!safeEqual(given, password)) {
     await new Promise(r => setTimeout(r, 1500)); // slow down guessing
     return res.status(401).send(loginPage('Wrong password'));
@@ -79,7 +79,7 @@ app.post('/login', async (req, res) => {
 
 app.use((req, res, next) => {
   if (OPEN_PATHS.has(req.path)) return next();
-  const password = process.env.DASHBOARD_PASSWORD;
+  const password = (process.env.DASHBOARD_PASSWORD || '').trim();
   if (!password) {
     return res.status(503).type('text/plain').send('Dashboard locked: set DASHBOARD_PASSWORD in the hosting environment variables.');
   }
