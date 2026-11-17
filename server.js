@@ -1076,6 +1076,8 @@ app.get('/health', (req, res) => {
     futures_trading: config.futures_trading === true,
     spot_trading: config.spot_trading !== false,
     spot_bot_positions: Object.values(spotHoldings).filter(r => r.source === 'bot').length,
+    spot_usdt_enough_for_a_buy: spotBalance ? (parseFloat((spotBalance.find(c => c.coin === 'USDT') || {}).balance || 0) * 0.98 >= 10.2) : null,
+    spot_buys_possible_now: spotBalance ? Math.max(0, Math.floor(parseFloat((spotBalance.find(c => c.coin === 'USDT') || {}).balance || 0) * 0.98 / parseFloat(config.spot_order_usdt || 11))) : null,
     keys_set: !!(config.api_key && config.secret_key),
     exchange_api_ok: health.apiOk,
     started_at: health.startedAt,
