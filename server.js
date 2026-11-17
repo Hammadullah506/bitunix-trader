@@ -958,12 +958,50 @@ let paper = readJson(PAPER_PATH);
 function savePaper() { try { fs.writeFileSync(PAPER_PATH, JSON.stringify(paper), 'utf-8'); } catch (e) {} }
 const isLive = () => config.live_trading === true;
 
+// The owner's real Binance wallet, shown on the dashboard in every mode (prices every tick,
+// buy prices from the account's trade history every 10 minutes per coin)
+let realWallet = [];
+let realWalletAt = 0;
+const costCache = {}; // coin -> { at, data }
+async function updateRealWallet(rows) {
+  if (Date.now() - realWalletAt < 30 * 1000) return;
+  realWalletAt = Date.now();
+  const px = await BN.prices();
+  const out = [];
+  for (const r of rows) {
+    const amount = parseFloat(r.balance || 0) + parseFloat(r.locked || 0);
+    if (!(amount > 0)) continue;
+    const coin = r.coin;
+    const isCash = coin === 'USDT' || coin === 'USDC' || coin === 'FDUSD';
+    const price = isCash ? 1 : (px[`${coin}USDT`] || 0);
+    const row = { coin, amount, price, value: amount * price, avg_buy: null, change_pct: null, cost_note: null };
+    if (!isCash && px[`${coin}USDT`]) {
+      let c = costCache[coin];
+      if (!c || Date.now() - c.at > 10 * 60 * 1000) {
+        try { c = { at: Date.now(), data: await BN.averageCost(`${coin}USDT`, BINANCE_KEY, BINANCE_SECRET, amount) }; } catch (e) { c = { at: Date.now(), data: null }; }
+        costCache[coin] = c;
+      }
+      if (c.data) {
+        row.avg_buy = c.data.avgPrice;
+        row.change_pct = (price / c.data.avgPrice - 1) * 100;
+        row.bought_at = c.data.firstBuy;
+        if (c.data.covers < 0.9) row.cost_note = 'Part of this coin came from outside a USDT trade (deposit or convert), so the buy price covers only part of it.';
+      } else {
+        row.cost_note = 'No USDT trade found for this coin (it may have come from a deposit, Convert or another pair).';
+      }
+    }
+    out.push(row);
+  }
+  realWallet = out.sort((a, b) => b.value - a.value);
+}
+
 // Spot balances as [{ coin, balance }] (free amounts)
 async function getSpotAccount() {
   let real = null;
   if (EXCHANGE === 'binance') {
     if (BINANCE_KEY && BINANCE_SECRET) {
       try { real = await BN.balances(BINANCE_KEY, BINANCE_SECRET); } catch (e) { real = { ok: false, msg: e.message }; }
+      if (real.ok) updateRealWallet(real.data).catch(() => {});
       health.apiOk = !!real.ok;
       if (!real.ok && scanTickCount % 60 === 0) log(`[BINANCE] Account check failed: ${real.msg}`, 'ERROR');
     } else {
@@ -1392,6 +1430,7 @@ function buildStatus(liveBal, livePositions) {
     live_balance: liveBal,
     spot_balance: spotBalance,
     spot_holdings: spotSummary(),
+    real_wallet: EXCHANGE === 'binance' ? realWallet : null,
     spot_today: { realized: spotRealizedToday, max_loss: parseFloat(config.max_daily_loss_usd || 1.5) },
     mode: { futures: EXCHANGE !== 'binance' && config.futures_trading === true, spot: config.spot_trading !== false, exchange: EXCHANGE, live: isLive(), paper_start: paper ? paper.start : null, paper_started_at: paper ? paper.startedAt : null },
     live_positions: livePositions,

@@ -218,8 +218,13 @@
         </div>
       </section>
 
+      <section id="real-wallet-section" hidden>
+        <h2>Your Binance wallet (real) <span class="muted num" style="font-weight:400" id="real-total"></span></h2>
+        <div class="body" id="real-wallet"></div>
+      </section>
+
       <section>
-        <h2>Spot holdings <span class="muted num" style="font-weight:400" id="spot-today"></span></h2>
+        <h2><span id="spot-title">Spot holdings</span> <span class="muted num" style="font-weight:400" id="spot-today"></span></h2>
         <div class="scroll">
           <table>
             <thead><tr><th>Coin</th><th class="r">Amount</th><th class="r">Value</th><th>Your buy price</th><th class="r">Profit</th><th>Plan</th></tr></thead>
@@ -433,7 +438,26 @@
         return `<tr><td><strong>${esc(c.name)}</strong></td><td class="r num">${price(c.price)}</td><td class="r num">${num(c.rsi).toFixed(1)}</td><td>${tr}</td><td>${c.site_label ? `<span class="${num(c.site_score) >= 25 ? 'up' : num(c.site_score) <= -25 ? 'down' : 'muted'}">${esc(c.site_label)}</span>` : '<span class="muted">–</span>'}</td><td>${sig}</td><td class="wrapcell">${esc(c.reason)}</td></tr>`;
       }).join('') : '<tr><td colspan="7" class="muted">Waiting for market data…</td></tr>';
 
+      // real Binance wallet
+      const rw = d.real_wallet;
+      $('real-wallet-section').hidden = !rw;
+      if (rw) {
+        $('real-total').textContent = 'Total ' + usd(rw.reduce((a, r) => a + num(r.value), 0));
+        $('real-wallet').innerHTML = rw.length ? rw.map(r => {
+          const ch = r.change_pct;
+          const pl = ch == null ? '' : `<div class="pl num ${cls(ch)}">${ch >= 0 ? '+' : '−'}${Math.abs(ch).toFixed(2)}%</div><div class="muted num" style="font-size:12px">${signed(r.value - r.amount * r.avg_buy, 2)}</div>`;
+          const bought = r.avg_buy ? `You bought at <b>${price(r.avg_buy)}</b>${r.bought_at ? ' on ' + new Date(r.bought_at).toLocaleDateString() : ''} · now ${price(r.price)}` : (r.coin === 'USDT' ? 'Cash' : `Price now ${price(r.price)}`);
+          return `<div class="pos">
+            <div class="grow"><strong>${esc(r.coin)}</strong> <span class="muted num">${esc(Number(num(r.amount).toPrecision(6)))}</span> <span class="num">· ${usd(r.value)}</span>
+              <div class="muted num" style="font-size:13px">${bought}</div>
+              ${r.cost_note ? `<div class="muted" style="font-size:12px">${esc(r.cost_note)}</div>` : ''}</div>
+            <div style="text-align:right">${pl}</div>
+          </div>`;
+        }).join('') : '<div class="empty">Loading your Binance wallet…</div>';
+      }
+
       // spot
+      $('spot-title').textContent = d.mode && d.mode.exchange === 'binance' && !d.mode.live ? 'Paper wallet (pretend money)' : 'Spot holdings';
       if (d.spot_today) $('spot-today').textContent = 'Today ' + signed(d.spot_today.realized, 2);
       if (!editingBasis) {
         const coinsHeld = spot.filter(h => h.coin !== 'USDT');

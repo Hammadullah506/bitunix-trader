@@ -108,4 +108,32 @@ async function marketOrder(symbol, side, { quote, qty }, key, secret) {
   return { ok: true, orderId: r.body.orderId, order: r.body };
 }
 
-module.exports = { klines, rules, roundDownToStep, balances, marketOrder, fillOf };
+// Latest prices for many symbols: { ENAUSDT: 0.42, ... }
+async function prices() {
+  const rows = await pub('/api/v3/ticker/price');
+  const out = {};
+  for (const r of rows) out[r.symbol] = parseFloat(r.price);
+  return out;
+}
+
+// Average buy price of the coins still held, from the account's own trades (oldest first, sells reduce the cost)
+async function averageCost(symbol, key, secret, holding) {
+  const r = await signed('GET', '/api/v3/myTrades', { symbol, limit: 1000 }, key, secret);
+  if (!r.ok || !Array.isArray(r.body)) return null;
+  let qty = 0, cost = 0, firstBuy = null;
+  for (const t of r.body.sort((a, b) => a.time - b.time)) {
+    const q = parseFloat(t.qty), px = parseFloat(t.price);
+    if (t.isBuyer) {
+      qty += q; cost += q * px;
+      if (!firstBuy) firstBuy = t.time;
+    } else if (qty > 0) {
+      const avg = cost / qty;
+      const sold = Math.min(q, qty);
+      qty -= sold; cost -= sold * avg;
+    }
+  }
+  if (!(qty > 0)) return null;
+  return { avgPrice: cost / qty, trackedQty: qty, firstBuy, trades: r.body.length, covers: holding > 0 ? Math.min(1, qty / holding) : 0 };
+}
+
+module.exports = { klines, rules, roundDownToStep, balances, marketOrder, fillOf, prices, averageCost };
