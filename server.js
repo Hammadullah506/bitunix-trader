@@ -153,6 +153,7 @@ function loadConfig() {
     spot_stop_pct: 3,             // sell a losing coin at this % below the buy price
     spot_site_min_score: 25,      // MHD Trade site score needed to buy (25 = Buy, 60 = Strong Buy)
     live_trading: false,          // false = paper mode: real prices and decisions, no real orders
+    hourly_report: true,          // Telegram summary of all signals every hour
     strategy_version: 5,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
@@ -194,7 +195,7 @@ function secretsFromEnv() {
 
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
-  'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct', 'live_trading',
+  'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct', 'live_trading', 'hourly_report',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
   'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
@@ -223,6 +224,7 @@ function saveConfig(newCfg) {
     const toDisk = { ...config };
     for (const f of [...SECRET_FIELDS, 'telegram_chat_id']) delete toDisk[f];
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(toDisk, null, 2), 'utf-8');
+    if (typeof markSeen === 'function') markSeen(CONFIG_PATH);
   } catch (e) {
     console.error("Config save error:", e);
   }
@@ -238,7 +240,7 @@ async function sendTelegramAlert(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: config.telegram_chat_id,
-        text: `⚡ *Bitunix Pro AI Trader*\n\n${text}`,
+        text: `*MHD Trader*\n\n${text}`,
         parse_mode: 'Markdown'
       })
     });
@@ -250,7 +252,7 @@ async function sendTelegramAlert(text) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: config.telegram_chat_id,
-          text: `⚡ Bitunix Pro AI Trader\n\n${plain}`
+          text: `MHD Trader\n\n${plain}`
         })
       });
     }
@@ -439,7 +441,7 @@ const SPOT_BASE_PRECISION = { BTC: 5, ETH: 4, SOL: 3, XRP: 1, DOGE: 0 }; // from
 let spotDay = null, spotRealizedToday = 0, lastSpotBuyAt = 0, spotCoolUntil = {};
 function floorTo(x, decimals) { const f = Math.pow(10, decimals); return Math.floor(x * f + 1e-9) / f; }
 function saveSpotHoldings() {
-  try { fs.writeFileSync(SPOT_PATH, JSON.stringify(spotHoldings), 'utf-8'); } catch (e) { console.error('Spot state save error:', e.message); }
+  try { fs.writeFileSync(SPOT_PATH, JSON.stringify(spotHoldings), 'utf-8'); markSeen(SPOT_PATH); } catch (e) { console.error('Spot state save error:', e.message); }
 }
 // Spot wallet as shown on the dashboard
 function spotSummary() {
@@ -1174,10 +1176,10 @@ async function checkBinance() {
 setTimeout(() => { checkBinance().catch(() => {}); }, 3000);
 setInterval(() => { checkBinance().catch(() => {}); }, 30 * 60 * 1000);
 
-app.get('/health', (req, res) => {
+function buildHealth() {
   const signals = {};
   for (const [sym, c] of Object.entries(multiCoinScanner)) signals[sym] = { signal: c.signal, trend: c.trend, reason: c.reason, site: c.site_label ? `${c.site_label} (${c.site_score})` : null };
-  res.json({
+  return {
     running: readRunning(),
     binance_from_server: binanceCheck,
     last_start_stop: lastControl,
@@ -1198,14 +1200,76 @@ app.get('/health', (req, res) => {
     last_order_error: health.lastOrderError,
     open_positions: lastPositionCount,
     signals
-  });
+  };
+}
+
+// The host may run more than one copy of the app, and web requests can land on a copy
+// that is standing by. The trading copy writes its live view to a shared file; the others
+// show that file, so the dashboard and /health always show the copy that really trades.
+const SNAPSHOT_PATH = path.join(STATE_DIR, '.bitunix-trader-snapshot.json');
+const fileSeen = {};
+function changedOnDisk(file) {
+  try {
+    const m = fs.statSync(file).mtimeMs;
+    if (fileSeen[file] === undefined) { fileSeen[file] = m; return false; }
+    if (m !== fileSeen[file]) { fileSeen[file] = m; return true; }
+  } catch (e) {}
+  return false;
+}
+function markSeen(file) { try { fileSeen[file] = fs.statSync(file).mtimeMs; } catch (e) {} }
+function writeSnapshot() {
+  try {
+    const tmp = SNAPSHOT_PATH + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ at: Date.now(), id: INSTANCE_ID, health: buildHealth(), status: buildStatus(null, []) }), 'utf-8');
+    fs.renameSync(tmp, SNAPSHOT_PATH);
+  } catch (e) {}
+}
+function leaderSnapshot() {
+  if (isLeader) return null;
+  const snap = readJson(SNAPSHOT_PATH);
+  return snap && snap.id !== INSTANCE_ID && Date.now() - snap.at < 60 * 1000 ? snap : null;
+}
+
+app.get('/health', (req, res) => {
+  const snap = leaderSnapshot();
+  if (snap) return res.json({ ...snap.health, running: readRunning(), last_start_stop: lastControl || snap.health.last_start_stop, served_by_standby_copy: true });
+  res.json(buildHealth());
 });
 let lastPositionCount = null;
 
 let lastSiteRefresh = 0;
+const HOURLY_PATH = path.join(STATE_DIR, '.bitunix-trader-hourly.json');
+async function hourlyReport() {
+  if (config.hourly_report === false) return;
+  const hourKey = new Date().toISOString().slice(0, 13);
+  const last = readJson(HOURLY_PATH);
+  if (last && last.hour === hourKey) return;
+  const coins = Object.values(multiCoinScanner);
+  if (coins.length < 3) return; // wait for the first full scan
+  if (coins.some(c => !c.site_label) && Date.now() - new Date(health.startedAt).getTime() < 15 * 60 * 1000) return; // and for the site scores
+  try { fs.writeFileSync(HOURLY_PATH, JSON.stringify({ hour: hourKey }), 'utf-8'); } catch (e) {}
+  const fmt = (n) => n >= 100 ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : n >= 1 ? n.toFixed(3) : n.toFixed(5);
+  const lines = coins.map(c => {
+    const sig = c.signal === 'BUY' ? '🟢 BUY' : c.signal === 'SELL' ? '🔴 SELL' : '⚪ Wait';
+    const tr = c.trend === 1 ? 'up' : c.trend === -1 ? 'down' : 'flat';
+    return `${c.name} $${fmt(c.price)} · ${sig} · site ${c.site_label || '-'} · 1h ${tr}`;
+  });
+  let wallet = '';
+  if (spotBalance) {
+    const total = spotSummary().reduce((a, h) => a + (h.value || 0), 0);
+    if (!isLive() && paper) wallet = `\nPaper wallet: $${total.toFixed(2)} (${total - paper.start >= 0 ? '+' : '-'}$${Math.abs(total - paper.start).toFixed(2)} since start)`;
+    else wallet = `\nSpot wallet: $${total.toFixed(2)}`;
+  }
+  const held = Object.entries(spotHoldings).filter(([, r]) => r.source === 'bot').map(([c]) => c);
+  const state = !readRunning() ? '⏸ Bot is STOPPED' : isLive() ? '✅ Live trading' : '📝 Paper mode';
+  sendTelegramAlert(`🕐 *Hourly signals* — ${state}\n\n${lines.join('\n')}${wallet}\nBot coins held: ${held.length ? held.join(', ') : 'none'}\nToday: ${spotRealizedToday >= 0 ? '+' : '-'}$${Math.abs(spotRealizedToday).toFixed(2)}`);
+}
+
 async function masterTick() {
   isRunning = readRunning();
   if (!claimLeadership()) return; // another copy of the app is doing the trading
+  if (changedOnDisk(CONFIG_PATH)) { config = loadConfig(); log('[SETTINGS] Reloaded settings saved from the dashboard.', 'INFO'); }
+  if (changedOnDisk(SPOT_PATH)) spotHoldings = readJson(SPOT_PATH) || {};
   await futuresTick();
   health.lastTickAt = new Date().toISOString();
   if (Date.now() - lastSiteRefresh > 60 * 1000) { // one coin per minute keeps the API load tiny
@@ -1216,6 +1280,8 @@ async function masterTick() {
   }
   for (const [sym, sc] of Object.entries(siteScores)) if (multiCoinScanner[sym]) { multiCoinScanner[sym].site_score = sc.score; multiCoinScanner[sym].site_label = sc.label; }
   await spotTick();
+  try { await hourlyReport(); } catch (e) {}
+  writeSnapshot();
 }
 
 app.get('/', (req, res) => {
@@ -1308,7 +1374,13 @@ app.get('/api/status', async (req, res) => {
     }
   } catch (e) {}
 
-  res.json({
+  const snap = EXCHANGE === 'binance' ? leaderSnapshot() : null;
+  if (snap) return res.json({ ...snap.status, running: readRunning(), config: publicConfig() });
+  res.json(buildStatus(liveBal, livePositions));
+});
+
+function buildStatus(liveBal, livePositions) {
+  return {
     running: readRunning(),
     instance: { id: INSTANCE_ID, trading: isLeader },
     config: publicConfig(),
@@ -1333,8 +1405,8 @@ app.get('/api/status', async (req, res) => {
       daily_goal: parseFloat(config.daily_goal || 4)
     },
     logs: logs
-  });
-});
+  };
+}
 
 app.get('/api/config', (req, res) => res.json(publicConfig()));
 
