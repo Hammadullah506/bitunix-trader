@@ -4,157 +4,151 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex">
-  <title>Bitunix Trader</title>
+  <title>MHD Trader</title>
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#101418">
+  <meta name="theme-color" content="#0b0e11">
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #101418;
-      --panel: #171c22;
-      --line: #262d36;
-      --text: #e6e9ed;
-      --muted: #8a94a3;
-      --up: #2fb37a;
-      --down: #e5484d;
-      --warn: #d9a23a;
-      --accent: #e6e9ed;
+      --bg: #0b0e11;
+      --panel: #181a20;
+      --panel-2: #1e2329;
+      --line: #2b3139;
+      --text: #eaecef;
+      --muted: #848e9c;
+      --up: #0ecb81;
+      --down: #f6465d;
+      --accent: #f0b90b;
+      --accent-ink: #181a20;
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
     .num { font-variant-numeric: tabular-nums; }
-    .up { color: var(--up); }
-    .down { color: var(--down); }
-    .muted { color: var(--muted); }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+    .up { color: var(--up); } .down { color: var(--down); } .muted { color: var(--muted); } .accent { color: var(--accent); }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+    a { color: inherit; }
 
-    header {
-      position: sticky; top: 0; z-index: 10;
-      background: var(--bg);
-      border-bottom: 1px solid var(--line);
-    }
-    .bar { display: flex; align-items: center; gap: 12px; min-height: 56px; }
-    .brand { font-weight: 650; font-size: 16px; white-space: nowrap; }
-    .state { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-    .dot.on { background: var(--up); }
-    .dot.off { background: var(--down); }
-    .bar .spacer { flex: 1; min-width: 0; }
-    button, .btn {
-      font: inherit; color: var(--text); background: transparent;
-      border: 1px solid var(--line); border-radius: 8px;
-      padding: 8px 12px; min-height: 38px; cursor: pointer; white-space: nowrap;
-      text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
-    }
-    button:hover, .btn:hover { border-color: #3a4350; }
-    button.primary { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
-    button.danger { color: var(--down); }
-    button.go { background: var(--up); border-color: var(--up); color: #06130d; font-weight: 600; }
-    button.go:hover { border-color: #3fd193; background: #3fd193; }
-    button.halt { background: var(--down); border-color: var(--down); color: #fff; font-weight: 600; }
-    button.halt:hover { border-color: #f0646a; background: #f0646a; }
-    button.small { padding: 5px 10px; min-height: 30px; font-size: 13px; }
+    header { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--line); }
+    .bar { display: flex; align-items: center; gap: 10px; min-height: 56px; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; white-space: nowrap; }
+    .brand i { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: inline-block; transform: rotate(45deg) scale(.72); }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--panel-2); font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .dot.on { background: var(--up); } .dot.off { background: var(--down); }
+    .pill.paper { color: var(--accent); } .pill.live { color: var(--up); }
+    .spacer { flex: 1; min-width: 0; }
+    button, .btn { font: inherit; font-weight: 500; color: var(--text); background: var(--panel-2); border: 0; border-radius: 6px; padding: 8px 14px; min-height: 36px; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    button:hover, .btn:hover { filter: brightness(1.15); }
+    button.yellow { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    button.green { background: var(--up); color: #fff; font-weight: 600; }
+    button.red { background: var(--down); color: #fff; font-weight: 600; }
     button:disabled { opacity: .5; cursor: default; }
-    @media (max-width: 520px) {
-      .bar { gap: 8px; }
-      .bar .hide-sm { display: none; }
-      .bar { gap: 6px; }
-      .bar button { padding: 8px 9px; font-size: 14px; }
-      #state-text { font-size: 12px; }
-    }
-    @media (max-width: 380px) {
-      #state-text { display: none; }
-      button, .btn { padding: 8px 10px; }
-    }
 
-    main { padding: 16px 0 40px; display: grid; gap: 16px; }
-    #toasts { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 20; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
-    .toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 12px; font-size: 14px; max-width: 360px; width: 100%; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-    .toast.buy { border-left-color: var(--up); }
-    .toast.sell { border-left-color: var(--down); }
-    .toast.info { border-left-color: var(--warn); }
-    @media (max-width: 520px) { #btn-sound { padding: 8px; } }
-    .notice { border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
-    .stat .label { font-size: 12px; color: var(--muted); }
-    .stat .value { font-size: 20px; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
-    .stat .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    nav.tabs { display: flex; gap: 22px; overflow-x: auto; scrollbar-width: none; border-top: 1px solid var(--line); }
+    nav.tabs::-webkit-scrollbar { display: none; }
+    nav.tabs a { padding: 10px 0; color: var(--muted); text-decoration: none; white-space: nowrap; font-weight: 500; border-bottom: 2px solid transparent; }
+    nav.tabs a.active, nav.tabs a:hover { color: var(--text); border-bottom-color: var(--accent); }
 
-    section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
-    section > h2 {
-      margin: 0; padding: 12px 14px; font-size: 14px; font-weight: 600;
-      border-bottom: 1px solid var(--line);
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    }
-    section > .body { padding: 12px 14px; }
-    .empty { color: var(--muted); font-size: 14px; }
+    main { padding: 16px 0 48px; display: grid; gap: 16px; }
+    section { background: var(--panel); border-radius: 12px; min-width: 0; scroll-margin-top: 112px; }
+    section > h2 { margin: 0; padding: 14px 16px 10px; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    section > h2 small { font-size: 13px; font-weight: 400; color: var(--muted); }
+    .body { padding: 0 16px 16px; }
+    .notice { background: rgba(240,185,11,.08); border: 1px solid rgba(240,185,11,.35); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+
+    .balance { padding: 18px 16px 6px; }
+    .balance .label { color: var(--muted); font-size: 13px; }
+    .balance .big { font-size: 30px; font-weight: 700; letter-spacing: -.01em; }
+    .balance .big small { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; overflow: hidden; margin-top: 12px; }
+    @media (max-width: 760px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+    .card { background: var(--panel); padding: 12px 16px; min-width: 0; }
+    .card .label { color: var(--muted); font-size: 12px; }
+    .card .value { font-size: 18px; font-weight: 600; margin-top: 2px; overflow-wrap: anywhere; }
+    .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 12px 16px; border-top: 1px solid var(--line); }
+    .row .grow { flex: 1; min-width: 170px; }
+    .row .right { text-align: right; }
+    .row .big { font-size: 18px; font-weight: 600; }
+    .coin { font-weight: 600; font-size: 15px; }
+    .tag { font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 4px; }
+    .tag.buy { color: var(--up); background: rgba(14,203,129,.12); }
+    .tag.sell { color: var(--down); background: rgba(246,70,93,.12); }
+    .tag.wait { color: var(--muted); background: var(--panel-2); }
+    .rules { color: var(--muted); font-size: 12px; padding: 10px 16px 14px; border-top: 1px solid var(--line); }
+    .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 16px 14px; }
+    .levels div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+    .levels .label { font-size: 12px; color: var(--muted); }
+    .levels .v { font-weight: 600; overflow-wrap: anywhere; }
+    @media (max-width: 520px) { .levels { grid-template-columns: 1fr 1fr; } }
+
     .scroll { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-    th { font-size: 12px; font-weight: 500; color: var(--muted); }
-    tr:last-child td { border-bottom: 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 11px 16px; white-space: nowrap; }
+    th { font-size: 12px; font-weight: 400; color: var(--muted); }
+    tbody tr { border-top: 1px solid var(--line); }
+    tbody tr:hover { background: var(--panel-2); }
     td.r, th.r { text-align: right; }
-    td.wrapcell { white-space: normal; min-width: 180px; color: var(--muted); }
-    .tag { font-size: 12px; padding: 2px 7px; border-radius: 5px; border: 1px solid var(--line); }
-    .tag.buy { color: var(--up); border-color: rgba(47,179,122,.4); }
-    .tag.sell { color: var(--down); border-color: rgba(229,72,77,.4); }
+    td.why { white-space: normal; min-width: 200px; color: var(--muted); font-size: 13px; }
 
-    .pos { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-    .pos:last-child { border-bottom: 0; padding-bottom: 0; }
-    .pos:first-child { padding-top: 0; }
-    .pos .grow { flex: 1; min-width: 160px; }
-    .pos .pl { font-size: 18px; font-weight: 600; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-
-    #chart { height: 300px; }
-    #rsi-chart { height: 110px; border-top: 1px solid var(--line); }
-    @media (max-width: 520px) { #chart { height: 240px; } #rsi-chart { height: 90px; } }
-    .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 14px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
-    .legend b { font-weight: 600; }
+    #chart { height: 320px; }
+    #rsi-chart { height: 100px; border-top: 1px solid var(--line); }
+    @media (max-width: 520px) { #chart { height: 240px; } #rsi-chart { height: 84px; } }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 16px 10px; font-size: 12px; color: var(--muted); }
     .sw { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 5px; }
 
-    #logs { max-height: 320px; overflow-y: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    #logs div { padding: 3px 14px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-    #logs div:last-child { border-bottom: 0; }
+    #logs { max-height: 360px; overflow-y: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #logs div { padding: 4px 16px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
     #logs .t { color: var(--muted); margin-right: 8px; }
-    #logs .WARNING { color: var(--warn); }
-    #logs .ERROR { color: var(--down); }
-    #logs .SUCCESS { color: var(--up); }
+    #logs .WARNING { color: var(--accent); } #logs .ERROR { color: var(--down); } #logs .SUCCESS { color: var(--up); }
 
-    input[type=number], input[type=text] {
-      font: inherit; color: var(--text); background: var(--bg);
-      border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 110px; font-size: 16px;
+    @media (max-width: 560px) {
+      .bar { gap: 6px; } .bar .hide-sm { display: none; }
+      button, .btn { padding: 8px 10px; }
+      th, td { padding: 10px 12px; }
     }
-    dialog {
-      background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px;
-      padding: 0; width: min(420px, calc(100vw - 32px));
-    }
-    dialog::backdrop { background: rgba(0,0,0,.6); }
-    dialog h2 { margin: 0; padding: 14px 16px; font-size: 15px; border-bottom: 1px solid var(--line); }
+
+    #toasts { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 20; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
+    .toast { background: var(--panel-2); border-left: 3px solid var(--muted); border-radius: 8px; padding: 10px 12px; font-size: 14px; max-width: 380px; width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+    .toast.buy { border-left-color: var(--up); } .toast.sell { border-left-color: var(--down); } .toast.info { border-left-color: var(--accent); }
+
+    dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(440px, calc(100vw - 32px)); }
+    dialog::backdrop { background: rgba(0,0,0,.65); }
+    dialog h3 { margin: 0; padding: 14px 16px; font-size: 16px; border-bottom: 1px solid var(--line); }
     dialog form { padding: 14px 16px; display: grid; gap: 12px; }
-    dialog label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
-    dialog label span small { display: block; color: var(--muted); font-size: 12px; }
-    dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+    dialog label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    dialog label small { display: block; color: var(--muted); font-size: 12px; }
+    dialog input[type=number] { font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 96px; }
+    dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
+    dialog .group { font-size: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
   </style>
 </head>
 <body>
   <header>
     <div class="wrap bar">
-      <div class="brand"><span class="hide-sm">Bitunix </span>Trader</div>
-      <div class="state"><span class="dot" id="dot"></span><span id="state-text">Loading</span></div>
+      <div class="brand"><i></i>MHD Trader</div>
+      <span class="pill" id="state-pill"><span class="dot" id="dot"></span><span id="state-text">Loading</span></span>
+      <span class="pill hide-sm" id="mode-pill">–</span>
       <div class="spacer"></div>
-      <button id="btn-toggle" class="go" disabled>Start</button>
-      <button id="btn-sound" title="Sound and pop-up alerts for signals and trades">Alerts off</button>
-      <button id="btn-settings">Settings</button>
+      <button id="btn-toggle" class="green" disabled>Start</button>
+      <button id="btn-sound" title="Sound alerts">🔕</button>
+      <button id="btn-settings" title="Settings">⚙</button>
       <a class="btn hide-sm" href="/logout">Log out</a>
+    </div>
+    <div class="wrap">
+      <nav class="tabs" id="tabs">
+        <a href="#overview" class="active">Overview</a>
+        <a href="#dca">ENA DCA</a>
+        <a href="#futures">Futures test</a>
+        <a href="#markets">Markets</a>
+        <a href="#wallet">Wallet</a>
+        <a href="#activity">Activity</a>
+      </nav>
     </div>
   </header>
 
@@ -162,85 +156,59 @@
     <main>
       <div class="notice" id="notice" hidden></div>
 
-      <div class="stats">
-        <div class="stat">
-          <div class="label" id="s-first-label">Futures wallet</div>
-          <div class="value num" id="s-futures">–</div>
-          <div class="sub num" id="s-margin">&nbsp;</div>
+      <section id="overview">
+        <div class="balance">
+          <div class="label">Estimated balance (your Binance wallet)</div>
+          <div class="big num" id="o-total">–<small>USDT</small></div>
+          <div class="muted num" id="o-sub">&nbsp;</div>
         </div>
-        <div class="stat">
-          <div class="label">Today</div>
-          <div class="value num" id="s-today">–</div>
-          <div class="sub num" id="s-limits">&nbsp;</div>
+        <div class="cards">
+          <div class="card"><div class="label">ENA DCA profit</div><div class="value num" id="o-dca">–</div><div class="sub" id="o-dca-sub">&nbsp;</div></div>
+          <div class="card"><div class="label">Futures test (paper)</div><div class="value num" id="o-fut">–</div><div class="sub" id="o-fut-sub">&nbsp;</div></div>
+          <div class="card"><div class="label">BTC</div><div class="value num" id="o-btc">–</div><div class="sub num" id="o-btc-sub">&nbsp;</div></div>
+          <div class="card"><div class="label">Bot</div><div class="value" id="o-bot">–</div><div class="sub" id="o-bot-sub">&nbsp;</div></div>
         </div>
-        <div class="stat">
-          <div class="label">Spot wallet</div>
-          <div class="value num" id="s-spot">–</div>
-          <div class="sub num" id="s-spot-usdt">&nbsp;</div>
-        </div>
-        <div class="stat">
-          <div class="label">BTC price</div>
-          <div class="value num" id="s-btc">–</div>
-          <div class="sub num" id="s-rsi">&nbsp;</div>
-        </div>
-      </div>
-
-      <section id="dca-section" hidden>
-        <h2><span id="dca-title">Dip buying</span> <span class="muted num" style="font-weight:400" id="dca-sub"></span></h2>
-        <div class="body" id="dca-body"></div>
       </section>
 
-      <section>
-        <h2><span id="trades-title">Open trades</span>
-          <span class="row">
-            <button class="small go" id="btn-buy">Buy BTC</button>
-            <button class="small halt" id="btn-sell">Sell BTC</button>
-          </span>
-        </h2>
-        <div class="body" id="positions"><div class="empty">No open trade.</div></div>
+      <section id="dca">
+        <h2><span id="dca-title">ENA DCA</span> <small id="dca-sub"></small></h2>
+        <div id="dca-body"><div class="body muted">Loading…</div></div>
       </section>
 
-      <section>
-        <h2>BTC / USDT, 5 minutes <span class="muted" style="font-weight:400" id="chart-signal"></span></h2>
+      <section id="futures">
+        <h2>Futures test <small id="fut-sub">pretend money, no real orders</small></h2>
+        <div id="fut-body"><div class="body muted">Loading…</div></div>
+      </section>
+
+      <section id="markets">
+        <h2>Markets <small>bot signal + MHD site + 1h trend</small></h2>
         <div class="legend">
-          <span><span class="sw" style="background:#d9a23a"></span>EMA 9 <b id="lg-e9">–</b></span>
+          <span><span class="sw" style="background:#f0b90b"></span>EMA 9 <b id="lg-e9">–</b></span>
           <span><span class="sw" style="background:#5b8def"></span>EMA 21 <b id="lg-e21">–</b></span>
           <span><span class="sw" style="background:#b06ad9"></span>EMA 50 <b id="lg-e50">–</b></span>
           <span>RSI <b id="lg-rsi">–</b></span>
-          <span id="lg-trend"></span>
+          <span>BTC/USDT · 5m</span>
         </div>
         <div id="chart"></div>
         <div id="rsi-chart"></div>
-      </section>
-
-      <section>
-        <h2>Markets</h2>
         <div class="scroll">
           <table>
             <thead><tr><th>Coin</th><th class="r">Price</th><th class="r">RSI</th><th>1h trend</th><th>MHD site</th><th>Signal</th><th>Why</th></tr></thead>
-            <tbody id="markets"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+            <tbody id="markets-body"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
           </table>
         </div>
       </section>
 
-      <section id="real-wallet-section" hidden>
-        <h2>Your Binance wallet (real) <span class="muted num" style="font-weight:400" id="real-total"></span></h2>
-        <div class="body" id="real-wallet"></div>
+      <section id="wallet">
+        <h2>Your Binance wallet <small id="w-sub">real</small></h2>
+        <div id="wallet-body"><div class="body muted">Loading…</div></div>
+        <h2 style="border-top:1px solid var(--line)">Paper wallet <small id="pw-sub">pretend money used while live trading is off</small></h2>
+        <div id="paper-body"><div class="body muted">–</div></div>
       </section>
 
-      <section>
-        <h2><span id="spot-title">Spot holdings</span> <span class="muted num" style="font-weight:400" id="spot-today"></span></h2>
-        <div class="scroll">
-          <table>
-            <thead><tr><th>Coin</th><th class="r">Amount</th><th class="r">Value</th><th>Your buy price</th><th class="r">Profit</th><th>Plan</th></tr></thead>
-            <tbody id="spot"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2>Activity</h2>
-        <div id="logs"><div class="muted">Loading…</div></div>
+      <section id="activity">
+        <h2>Activity <small>newest first</small></h2>
+        <div id="logs"><div class="muted" style="padding:0 16px 16px">Loading…</div></div>
       </section>
 
       <a class="btn" href="/logout" style="justify-self:start">Log out</a>
@@ -250,18 +218,22 @@
   <div id="toasts"></div>
 
   <dialog id="settings">
-    <h2>Settings</h2>
+    <h3>Settings</h3>
     <form id="settings-form">
-      <label><span>Trade all five coins<small>Off: only BTC</small></span><input type="checkbox" id="cfg-multi"></label>
-      <label><span>Manage spot holdings<small>Sell at the profit target below</small></span><input type="checkbox" id="cfg-spot"></label>
-      <label><span>Spot profit target, %<small>Sell a coin when it is this far above your buy price</small></span><input type="number" id="cfg-spot-tp" step="0.5" min="0.5"></label>
-      <label><span>Daily loss limit, $<small>No new trades after losing this much in a day</small></span><input type="number" id="cfg-max-loss" step="0.1" min="0.1"></label>
-      <label><span>Daily goal, $<small>No new trades after earning this much in a day</small></span><input type="number" id="cfg-goal" step="0.1" min="0.1"></label>
-      <label><span>Stop loss, % of margin<small>A losing trade is closed at this loss</small></span><input type="number" id="cfg-sl" step="1" min="2" max="80"></label>
-      <label><span>Real money (live trading)<small>Off = paper mode, no real orders</small></span><input type="checkbox" id="cfg-live"></label>
+      <div class="group">Money</div>
+      <label><span>Real money (live trading)<small>Off = paper: real prices, pretend money</small></span><input type="checkbox" id="cfg-live"></label>
+      <div class="group">ENA DCA</div>
+      <label><span>Dip buying on ENA<small>Buy dips, average down, sell at profit</small></span><input type="checkbox" id="cfg-dca"></label>
+      <label><span>First buy, % below 24h high</span><input type="number" id="cfg-dip" step="0.5" min="1"></label>
+      <label><span>Next buy, % below last buy</span><input type="number" id="cfg-step" step="0.5" min="1"></label>
+      <label><span>Sell all at % profit</span><input type="number" id="cfg-tp" step="0.1" min="0.5"></label>
+      <div class="group">Futures test</div>
+      <label><span>Futures test (paper only)<small>Never uses real money</small></span><input type="checkbox" id="cfg-fut"></label>
+      <div class="group">Other</div>
+      <label><span>Hourly Telegram report</span><input type="checkbox" id="cfg-hourly"></label>
       <div class="actions">
         <button type="button" id="settings-cancel">Cancel</button>
-        <button type="submit" class="primary">Save</button>
+        <button type="submit" class="yellow">Save</button>
       </div>
     </form>
   </dialog>
@@ -273,13 +245,13 @@
     const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
     const usd = (v, d = 2) => '$' + num(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
     const signed = (v, d = 2) => (num(v) >= 0 ? '+' : '−') + '$' + Math.abs(num(v)).toFixed(d);
-    const price = (v) => { const n = num(v); return '$' + n.toLocaleString(undefined, { maximumFractionDigits: n >= 100 ? 1 : n >= 1 ? 3 : 5 }); };
+    const pct = (v, d = 2) => (num(v) >= 0 ? '+' : '−') + Math.abs(num(v)).toFixed(d) + '%';
+    const price = (v) => { if (v == null) return '–'; const n = num(v); return '$' + n.toLocaleString(undefined, { maximumFractionDigits: n >= 100 ? 2 : n >= 1 ? 4 : 6 }); };
     const cls = (v) => num(v) > 0 ? 'up' : num(v) < 0 ? 'down' : '';
+    const ago = (iso) => { const s = (Date.now() - new Date(iso).getTime()) / 1000; return s < 3600 ? Math.round(s / 60) + 'm' : s < 86400 ? (s / 3600).toFixed(1) + 'h' : (s / 86400).toFixed(1) + 'd'; };
 
-    let running = false;
-    let lastData = null;
+    let running = false, lastData = null;
     let chart = null, candleSeries = null, emaSeries = [], rsiChart = null, rsiSeries = null;
-    let editingBasis = false;
 
     async function api(path, body) {
       const opt = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -288,405 +260,239 @@
       return res.json();
     }
 
+    // ---------- chart ----------
     function initChart() {
       if (!window.LightweightCharts) return;
+      const base = { layout: { background: { color: 'transparent' }, textColor: '#848e9c', fontSize: 11 }, grid: { vertLines: { color: '#1e2329' }, horzLines: { color: '#1e2329' } }, rightPriceScale: { borderColor: '#2b3139' } };
       const el = $('chart');
-      chart = LightweightCharts.createChart(el, {
-        width: el.clientWidth, height: el.clientHeight,
-        layout: { background: { color: 'transparent' }, textColor: '#8a94a3', fontSize: 11 },
-        grid: { vertLines: { color: '#1e242c' }, horzLines: { color: '#1e242c' } },
-        rightPriceScale: { borderColor: '#262d36' },
-        timeScale: { borderColor: '#262d36', timeVisible: true, secondsVisible: false }
-      });
-      candleSeries = chart.addCandlestickSeries({
-        upColor: '#2fb37a', downColor: '#e5484d', borderVisible: false, wickUpColor: '#2fb37a', wickDownColor: '#e5484d'
-      });
-      emaSeries = ['#d9a23a', '#5b8def', '#b06ad9'].map(color => chart.addLineSeries({ color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }));
+      chart = LightweightCharts.createChart(el, { ...base, width: el.clientWidth, height: el.clientHeight, timeScale: { borderColor: '#2b3139', timeVisible: true, secondsVisible: false } });
+      candleSeries = chart.addCandlestickSeries({ upColor: '#0ecb81', downColor: '#f6465d', borderVisible: false, wickUpColor: '#0ecb81', wickDownColor: '#f6465d' });
+      emaSeries = ['#f0b90b', '#5b8def', '#b06ad9'].map(color => chart.addLineSeries({ color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }));
       new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth, height: el.clientHeight })).observe(el);
-
       const rel = $('rsi-chart');
-      rsiChart = LightweightCharts.createChart(rel, {
-        width: rel.clientWidth, height: rel.clientHeight,
-        layout: { background: { color: 'transparent' }, textColor: '#8a94a3', fontSize: 11 },
-        grid: { vertLines: { visible: false }, horzLines: { color: '#1e242c' } },
-        rightPriceScale: { borderColor: '#262d36', scaleMargins: { top: 0.1, bottom: 0.1 } },
-        timeScale: { visible: false },
-        handleScroll: false, handleScale: false
-      });
-      rsiSeries = rsiChart.addLineSeries({ color: '#c8ccd2', lineWidth: 1.5, priceLineVisible: false });
+      rsiChart = LightweightCharts.createChart(rel, { ...base, width: rel.clientWidth, height: rel.clientHeight, grid: { vertLines: { visible: false }, horzLines: { color: '#1e2329' } }, timeScale: { visible: false }, handleScroll: false, handleScale: false });
+      rsiSeries = rsiChart.addLineSeries({ color: '#eaecef', lineWidth: 1.5, priceLineVisible: false });
       rsiSeries.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
-      rsiSeries.createPriceLine({ price: 70, color: '#e5484d', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
-      rsiSeries.createPriceLine({ price: 30, color: '#2fb37a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+      rsiSeries.createPriceLine({ price: 70, color: '#f6465d', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+      rsiSeries.createPriceLine({ price: 30, color: '#0ecb81', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
       new ResizeObserver(() => rsiChart.applyOptions({ width: rel.clientWidth, height: rel.clientHeight })).observe(rel);
       chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) rsiChart.timeScale().setVisibleLogicalRange(r); });
     }
+    function emaLine(v, p) { const out = v.map(() => null); if (v.length < p) return out; const k = 2 / (p + 1); let c = v.slice(0, p).reduce((a, b) => a + b, 0) / p; out[p - 1] = c; for (let i = p; i < v.length; i++) { c = (v[i] - c) * k + c; out[i] = c; } return out; }
+    function rsiLine(v, p = 14) { const out = v.map(() => null); if (v.length <= p) return out; let g = 0, l = 0; for (let i = 1; i <= p; i++) { const d = v[i] - v[i - 1]; if (d > 0) g += d; else l -= d; } g /= p; l /= p; out[p] = l === 0 ? 100 : 100 - 100 / (1 + g / l); for (let i = p + 1; i < v.length; i++) { const d = v[i] - v[i - 1]; g = (g * (p - 1) + Math.max(d, 0)) / p; l = (l * (p - 1) + Math.max(-d, 0)) / p; out[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l); } return out; }
 
-    // Same maths as the server, so the lines match what the bot sees
-    function emaLine(values, period) {
-      if (values.length < period) return values.map(() => null);
-      const k = 2 / (period + 1);
-      let cur = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
-      const out = values.map(() => null);
-      out[period - 1] = cur;
-      for (let i = period; i < values.length; i++) { cur = (values[i] - cur) * k + cur; out[i] = cur; }
-      return out;
-    }
-    function rsiLine(values, period = 14) {
-      const out = values.map(() => null);
-      if (values.length <= period) return out;
-      let g = 0, l = 0;
-      for (let i = 1; i <= period; i++) { const d = values[i] - values[i - 1]; if (d > 0) g += d; else l -= d; }
-      g /= period; l /= period;
-      out[period] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
-      for (let i = period + 1; i < values.length; i++) {
-        const d = values[i] - values[i - 1];
-        g = (g * (period - 1) + Math.max(d, 0)) / period;
-        l = (l * (period - 1) + Math.max(-d, 0)) / period;
-        out[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l);
-      }
-      return out;
-    }
-
+    // ---------- render ----------
     function render(d) {
       lastData = d;
       running = !!d.running;
-      const cfg = d.config || {};
-      const guard = d.daily_guard || {};
-
-      // header
-      $('dot').className = 'dot ' + (running ? 'on' : 'off');
-      $('state-text').textContent = running ? (guard.paused ? 'Paused for today' : 'Running') : 'Stopped';
-      const t = $('btn-toggle');
-      t.disabled = false;
-      t.textContent = running ? 'Stop' : 'Start';
-      t.className = running ? 'halt' : 'go';
-
-      // notice
-      const n = $('notice');
-      let msg = '';
       const mode = d.mode || {};
-      if (mode.exchange !== 'binance' && (!cfg.api_key || !cfg.secret_key)) msg = 'Bitunix API key is not set on the server. Add BITUNIX_API_KEY and BITUNIX_SECRET_KEY in the hosting environment variables.';
-      else if (mode.exchange === 'binance' && !mode.live && running) msg = 'Paper mode: the bot trades with a pretend wallet at real Binance prices. No real orders are sent.';
-      else if (guard.paused === 'loss') msg = 'Daily loss limit reached. No new trades until tomorrow; open trades are still managed.';
-      else if (guard.paused === 'goal') msg = 'Daily goal reached. No new trades until tomorrow.';
-      else if (!running) msg = 'The bot is stopped. It will not open new trades. Open trades are still watched and closed by the rules.';
-      n.hidden = !msg; n.textContent = msg;
+      const live = !!mode.live;
 
-      // stats
-      const bal = d.live_balance;
-      if (mode.exchange === 'binance') {
-        $('s-first-label').textContent = mode.live ? 'Binance (real money)' : 'Binance (paper mode)';
-        const spotNow = (d.spot_holdings || []).reduce((a, h) => a + num(h.value), 0);
-        if (!mode.live && mode.paper_start) {
-          const chg = spotNow - num(mode.paper_start);
-          $('s-futures').textContent = signed(chg);
-          $('s-futures').className = 'value num ' + cls(chg);
-          $('s-margin').textContent = 'Paper wallet since ' + new Date(mode.paper_started_at).toLocaleDateString() + ' (started ' + usd(mode.paper_start) + ')';
-        } else {
-          $('s-futures').textContent = mode.live ? 'Live' : 'Paper';
-          $('s-futures').className = 'value num';
-          $('s-margin').textContent = mode.live ? 'Orders use real money' : 'No real orders';
-        }
-      } else if (bal) {
-        const total = num(bal.available) + num(bal.margin) + num(bal.frozen) + num(bal.crossUnrealizedPNL) + num(bal.isolationUnrealizedPNL);
-        $('s-futures').textContent = usd(total);
-        $('s-margin').textContent = num(bal.margin) > 0 ? usd(bal.margin) + ' in trades' : 'Nothing in trades';
+      $('dot').className = 'dot ' + (running ? 'on' : 'off');
+      $('state-text').textContent = running ? 'Running' : 'Stopped';
+      $('mode-pill').textContent = live ? 'LIVE · real money' : 'PAPER · pretend money';
+      $('mode-pill').className = 'pill hide-sm ' + (live ? 'live' : 'paper');
+      const t = $('btn-toggle'); t.disabled = false; t.textContent = running ? 'Stop' : 'Start'; t.className = running ? 'red' : 'green';
+
+      let msg = '';
+      if (!live) msg = 'Paper mode: real Binance prices, pretend money. For real money: ⚙ Settings → Real money.';
+      if (!running) msg = 'The bot is stopped: no new buys. Press Start. (An open ENA round still sells at its profit target.)';
+      $('notice').hidden = !msg; $('notice').textContent = msg;
+
+      // overview
+      const rw = d.real_wallet || [];
+      const total = rw.reduce((a, r) => a + num(r.value), 0);
+      $('o-total').innerHTML = `${num(total).toFixed(2)}<small>USDT</small>`;
+      const usdt = rw.find(r => r.coin === 'USDT');
+      $('o-sub').textContent = rw.length ? `≈ ${usd(total)} · ${usdt ? usd(usdt.value) + ' free USDT' : 'no free USDT'}` : 'Loading wallet…';
+      const dv = d.dca;
+      if (dv) {
+        $('o-dca').textContent = signed(dv.realized); $('o-dca').className = 'value num ' + cls(dv.realized);
+        $('o-dca-sub').textContent = `${dv.cycles} rounds${live ? '' : ' · paper'}${dv.round ? ' · round open' : ' · waiting'}`;
       }
-      if (d.mode && !d.mode.futures && d.spot_today) {
-        $('s-today').textContent = signed(d.spot_today.realized);
-        $('s-today').className = 'value num ' + cls(d.spot_today.realized);
-        $('s-limits').textContent = 'Spot trades closed today · limit −$' + num(d.spot_today.max_loss).toFixed(2);
-      } else if (guard.start_equity != null) {
-        $('s-today').textContent = signed(guard.pnl);
-        $('s-today').className = 'value num ' + cls(guard.pnl);
-        $('s-limits').textContent = 'Limit −$' + num(guard.max_daily_loss_usd).toFixed(2) + ' · Goal +$' + num(guard.daily_goal).toFixed(2);
+      const fv = d.futures_test;
+      if (fv) {
+        $('o-fut').textContent = usd(fv.equity); $('o-fut').className = 'value num ' + cls(fv.change);
+        $('o-fut-sub').textContent = `${signed(fv.change)} · ${fv.trades} trades, ${fv.wins} won`;
       }
-      const spot = d.spot_holdings || [];
-      const spotTotal = spot.reduce((a, h) => a + num(h.value), 0);
-      const usdt = spot.find(h => h.coin === 'USDT');
-      $('s-spot').textContent = usd(spotTotal);
-      $('s-spot-usdt').textContent = usdt ? usd(usdt.value) + ' in USDT' : '';
       const ind = d.indicators || {};
-      if (ind.latest_price) {
-        $('s-btc').textContent = price(ind.latest_price);
-        $('s-rsi').textContent = 'RSI ' + num(ind.current_rsi).toFixed(1);
+      const btc = (d.multi_coins || {}).BTCUSDT || {};
+      if (ind.latest_price) { $('o-btc').textContent = price(ind.latest_price); $('o-btc-sub').textContent = 'RSI ' + num(ind.current_rsi).toFixed(1) + ' · 1h ' + (btc.trend === 1 ? 'up' : btc.trend === -1 ? 'down' : 'flat'); }
+      $('o-bot').innerHTML = running ? '<span class="up">Running</span>' : '<span class="down">Stopped</span>';
+      $('o-bot-sub').textContent = live ? 'Real money' : 'Paper mode';
+
+      // DCA
+      if (dv) {
+        const st = dv.settings;
+        $('dca-title').textContent = dv.coin + ' DCA';
+        $('dca-sub').textContent = dv.enabled ? `${dv.cycles} rounds · ${signed(dv.realized)}${live ? '' : ' · paper'}` : 'off';
+        const rules = `<div class="rules">First buy $${num(st.base_usdt).toFixed(2)} when ${esc(dv.coin)} is ${st.dip_pct}% below its 24h high · next buy ${st.mult}× bigger every ${st.step_pct}% lower · max ${st.max_buys} buys · sells everything at +${st.tp_pct}% over the average, after fees · no stop loss.</div>`;
+        if (!dv.enabled) $('dca-body').innerHTML = '<div class="body muted">Off. Turn it on in ⚙ Settings.</div>';
+        else if (dv.round) {
+          const r = dv.round; const chg = r.value_now != null ? r.value_now - r.spent : null;
+          $('dca-body').innerHTML = `<div class="row"><div class="grow"><span class="coin">${esc(dv.coin)}</span> <span class="tag buy">Holding</span> <span class="muted">${r.buys}/${st.max_buys} buys · ${usd(r.spent)} in · since ${ago(r.started_at)}</span></div>
+              <div class="right"><div class="big num ${cls(chg)}">${chg == null ? '–' : signed(chg)}</div><div class="muted" style="font-size:12px">if sold now</div></div></div>
+            <div class="levels"><div><div class="label">Price now</div><div class="v num">${price(dv.price)}</div></div>
+              <div><div class="label">Your average</div><div class="v num">${price(r.avg_price)}</div></div>
+              <div><div class="label">Sells all at</div><div class="v num up">${price(r.sell_at)}</div></div>
+              ${r.next_buy_at ? `<div><div class="label">Next buy (${usd(r.next_buy_usdt)})</div><div class="v num">${price(r.next_buy_at)}</div></div>` : '<div><div class="label">Next buy</div><div class="v muted">none left</div></div>'}</div>` + rules;
+        } else {
+          const gap = dv.price && dv.first_buy_at ? (dv.first_buy_at / dv.price - 1) * 100 : null;
+          $('dca-body').innerHTML = `<div class="row"><div class="grow"><span class="coin">${esc(dv.coin)}</span> <span class="tag wait">Waiting for a dip</span></div></div>
+            <div class="levels"><div><div class="label">Price now</div><div class="v num">${price(dv.price)}</div></div>
+              <div><div class="label">24h high</div><div class="v num">${price(dv.high24)}</div></div>
+              <div><div class="label">First buy at</div><div class="v num accent">${price(dv.first_buy_at)}${gap != null ? ` <span class="muted" style="font-weight:400">(${pct(gap, 1)})</span>` : ''}</div></div></div>` + rules;
+        }
       }
 
-      // futures controls only when futures trading is on
-      const futOn = !!(d.mode && d.mode.futures);
-      $('btn-buy').style.display = futOn ? '' : 'none'; $('btn-sell').style.display = futOn ? '' : 'none';
-      $('trades-title').textContent = futOn ? 'Open futures trades' : 'Futures (off: spot only)';
-
-      // positions
-      const fee = num(cfg.taker_fee_pct || 0.06) / 100;
-      const positions = d.live_positions || [];
-      $('positions').innerHTML = positions.length ? positions.map(p => {
-        const long = p.side === 'BUY' || p.side === 'LONG';
-        const gross = num(p.unrealizedPNL);
-        const net = gross - num(p.qty) * num(p.avgOpenPrice) * fee * 2;
-        const pct = num(p.margin) > 0 ? net / num(p.margin) * 100 : 0;
-        return `<div class="pos">
-          <div class="grow"><strong>${esc(p.symbol)}</strong> <span class="tag ${long ? 'buy' : 'sell'}">${long ? 'Long' : 'Short'}${p.leverage ? ' ' + esc(p.leverage) + 'x' : ''}</span>
-            <div class="muted num" style="font-size:13px">Entry ${price(p.avgOpenPrice)} · Size ${esc(p.qty)} · Margin ${usd(p.margin)}</div></div>
-          <div><div class="pl num ${cls(net)}">${signed(net, 3)}</div><div class="muted num" style="font-size:12px">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}% after fees</div></div>
-        </div>`;
-      }).join('') + '<div class="row" style="margin-top:10px"><button class="small halt" id="btn-close">Close all trades</button></div>'
-        : `<div class="empty">${futOn ? 'No open trade.' : 'Futures trading is off. The bot trades spot coins only; see Spot holdings below.'}</div>`;
-      const closeBtn = $('btn-close');
-      if (closeBtn) closeBtn.onclick = closeAll;
+      // futures test
+      if (fv) {
+        $('fut-sub').textContent = `pretend money · ${fv.leverage}x · $${fv.margin} per trade · started ${new Date(fv.startedAt).toLocaleDateString()} with ${usd(fv.start)}`;
+        if (!fv.enabled) $('fut-body').innerHTML = '<div class="body muted">Off. Turn it on in ⚙ Settings.</div>';
+        else {
+          const o = fv.open;
+          let html = `<div class="levels"><div><div class="label">Test balance</div><div class="v num">${usd(fv.equity)}</div></div>
+              <div><div class="label">Since start</div><div class="v num ${cls(fv.change)}">${signed(fv.change)}</div></div>
+              <div><div class="label">Trades / won</div><div class="v num">${fv.trades} / ${fv.wins}</div></div></div>`;
+          html += o ? `<div class="row"><div class="grow"><span class="coin">${esc(o.coin)}USDT</span> <span class="tag ${o.side === 'LONG' ? 'buy' : 'sell'}">${o.side} ${o.lev}x</span>
+                <div class="muted num" style="font-size:13px">Entry ${price(o.entry)} · now ${price(o.price)} · stop ${price(o.stop_price)} · open ${ago(o.openedAt)}</div></div>
+                <div class="right"><div class="big num ${cls(o.pnl)}">${o.pnl == null ? '–' : signed(o.pnl)}</div><div class="muted num" style="font-size:12px">${o.pct == null ? '' : pct(o.pct, 1) + ' of margin'}</div></div></div>`
+            : `<div class="row"><div class="grow muted">No test trade open. It opens when a coin shows a strong BUY (long) or SELL (short) that agrees with its 1h trend.</div></div>`;
+          if (fv.recent.length) html += `<div class="scroll"><table><thead><tr><th>Closed</th><th>Coin</th><th>Side</th><th class="r">Entry</th><th class="r">Exit</th><th class="r">Result</th></tr></thead><tbody>` +
+            fv.recent.map(x => `<tr><td class="muted">${ago(x.closedAt)} ago</td><td>${esc(x.coin)}</td><td><span class="tag ${x.side === 'LONG' ? 'buy' : 'sell'}">${x.side}</span></td><td class="r num">${price(x.entry)}</td><td class="r num">${price(x.exit)}</td><td class="r num ${cls(x.pnl)}">${signed(x.pnl, 3)}</td></tr>`).join('') + '</tbody></table></div>';
+          $('fut-body').innerHTML = html;
+        }
+      }
 
       // markets
       const coins = Object.values(d.multi_coins || {});
-      $('markets').innerHTML = coins.length ? coins.map(c => {
-        const tr = c.trend === 1 ? '<span class="up">Up</span>' : c.trend === -1 ? '<span class="down">Down</span>' : '<span class="muted">Flat</span>';
-        const sig = c.signal === 'BUY' ? '<span class="tag buy">Buy</span>' : c.signal === 'SELL' ? '<span class="tag sell">Sell</span>' : '<span class="muted">Wait</span>';
-        return `<tr><td><strong>${esc(c.name)}</strong></td><td class="r num">${price(c.price)}</td><td class="r num">${num(c.rsi).toFixed(1)}</td><td>${tr}</td><td>${c.site_label ? `<span class="${num(c.site_score) >= 25 ? 'up' : num(c.site_score) <= -25 ? 'down' : 'muted'}">${esc(c.site_label)}</span>` : '<span class="muted">–</span>'}</td><td>${sig}</td><td class="wrapcell">${esc(c.reason)}</td></tr>`;
+      $('markets-body').innerHTML = coins.length ? coins.map(c => {
+        const tr = c.trend === 1 ? '<span class="up">▲ Up</span>' : c.trend === -1 ? '<span class="down">▼ Down</span>' : '<span class="muted">Flat</span>';
+        const sig = c.signal === 'BUY' ? '<span class="tag buy">BUY</span>' : c.signal === 'SELL' ? '<span class="tag sell">SELL</span>' : '<span class="tag wait">WAIT</span>';
+        const site = c.site_label ? `<span class="${num(c.site_score) >= 25 ? 'up' : num(c.site_score) <= -25 ? 'down' : 'muted'}">${esc(c.site_label)}</span>` : '<span class="muted">–</span>';
+        return `<tr><td><span class="coin">${esc(c.name)}</span><span class="muted">/USDT</span></td><td class="r num">${price(c.price)}</td><td class="r num">${num(c.rsi).toFixed(1)}</td><td>${tr}</td><td>${site}</td><td>${sig}</td><td class="why">${esc(c.reason)}</td></tr>`;
       }).join('') : '<tr><td colspan="7" class="muted">Waiting for market data…</td></tr>';
-
-      // DCA (dip buying with averaging down)
-      const dv = d.dca;
-      $('dca-section').hidden = !dv || !dv.enabled;
-      if (dv && dv.enabled) {
-        const p = (n) => n == null ? '–' : price(n);
-        const tag = d.mode && d.mode.live ? '' : ' · paper';
-        $('dca-title').textContent = dv.coin + ' dip buying';
-        $('dca-sub').textContent = `${dv.cycles} round${dv.cycles === 1 ? '' : 's'} done · ${signed(dv.realized)}${tag}`;
-        const st = dv.settings;
-        const rule = `<div class="muted" style="font-size:13px;margin-top:10px">Rules: first buy $${num(st.base_usdt).toFixed(2)} when the price is ${st.dip_pct}% below the 24h high · each next buy ${st.mult}× bigger, ${st.step_pct}% lower · up to ${st.max_buys} buys · sell everything at +${st.tp_pct}% over the average, after fees · no stop loss.</div>`;
-        if (dv.round) {
-          const r = dv.round;
-          const chg = r.value_now != null ? r.value_now - r.spent : null;
-          $('dca-body').innerHTML = `<div class="pos"><div class="grow">
-              <strong>${r.buys} of ${st.max_buys} buys</strong> · ${usd(r.spent)} in · average <b>${p(r.avg_price)}</b>
-              <div class="muted num" style="font-size:13px">Now ${p(dv.price)} · sells all at <b class="up">${p(r.sell_at)}</b>${r.next_buy_at ? ` · next buy ${usd(r.next_buy_usdt)} at <b>${p(r.next_buy_at)}</b>` : ' · no more buys this round, waiting for the price to come back'}</div>
-            </div>
-            <div style="text-align:right"><div class="pl num ${cls(chg)}">${chg == null ? '–' : signed(chg, 2)}</div><div class="muted" style="font-size:12px">if sold now</div></div></div>` + rule;
-        } else {
-          const gap = dv.price && dv.first_buy_at ? (dv.price / dv.first_buy_at - 1) * 100 : null;
-          $('dca-body').innerHTML = `<div class="pos"><div class="grow"><strong>Waiting for a dip</strong>
-              <div class="muted num" style="font-size:13px">Now ${p(dv.price)} · 24h high ${p(dv.high24)} · first buy at <b>${p(dv.first_buy_at)}</b>${gap != null ? ` (${gap.toFixed(1)}% lower than now)` : ''}</div></div></div>` + rule;
-        }
+      if (ind.latest_price) {
+        $('lg-e9').textContent = price(ind.ema9); $('lg-e21').textContent = price(ind.ema21); $('lg-e50').textContent = price(ind.ema50); $('lg-rsi').textContent = num(ind.current_rsi).toFixed(1);
+      }
+      if (candleSeries && ind.candles && ind.candles.length) {
+        const times = ind.candles.map(c => Math.floor(c.time / 1000)), closes = ind.candles.map(c => c.close);
+        candleSeries.setData(ind.candles.map((c, i) => ({ time: times[i], open: c.open, high: c.high, low: c.low, close: c.close })));
+        [9, 21, 50].forEach((p, k) => { const l = emaLine(closes, p); emaSeries[k].setData(times.map((tt, i) => l[i] == null ? { time: tt } : { time: tt, value: l[i] })); });
+        const r = rsiLine(closes); rsiSeries.setData(times.map((tt, i) => r[i] == null ? { time: tt } : { time: tt, value: r[i] }));
       }
 
-      // real Binance wallet
-      const rw = d.real_wallet;
-      $('real-wallet-section').hidden = !rw;
-      if (rw) {
-        $('real-total').textContent = 'Total ' + usd(rw.reduce((a, r) => a + num(r.value), 0));
-        $('real-wallet').innerHTML = rw.length ? rw.map(r => {
-          const ch = r.change_pct;
-          const pl = ch == null ? '' : `<div class="pl num ${cls(ch)}">${ch >= 0 ? '+' : '−'}${Math.abs(ch).toFixed(2)}%</div><div class="muted num" style="font-size:12px">${signed(r.value - r.amount * r.avg_buy, 2)}</div>`;
-          const bought = r.avg_buy ? `You bought at <b>${price(r.avg_buy)}</b>${r.bought_at ? ' on ' + new Date(r.bought_at).toLocaleDateString() : ''} · now ${price(r.price)}` : (r.coin === 'USDT' ? 'Cash' : `Price now ${price(r.price)}`);
-          return `<div class="pos">
-            <div class="grow"><strong>${esc(r.coin)}</strong> <span class="muted num">${esc(Number(num(r.amount).toPrecision(6)))}</span> <span class="num">· ${usd(r.value)}</span>
-              <div class="muted num" style="font-size:13px">${bought}</div>
-              ${r.cost_note ? `<div class="muted" style="font-size:12px">${esc(r.cost_note)}</div>` : ''}</div>
-            <div style="text-align:right">${pl}</div>
-          </div>`;
-        }).join('') : '<div class="empty">Loading your Binance wallet…</div>';
-      }
+      // real wallet
+      $('w-sub').textContent = rw.length ? 'real · total ' + usd(total) : 'real';
+      $('wallet-body').innerHTML = rw.length ? rw.map(r => {
+        const ch = r.change_pct;
+        const bought = r.avg_buy ? `Bought at <b>${price(r.avg_buy)}</b>${r.bought_at ? ' · ' + new Date(r.bought_at).toLocaleDateString() : ''} · now ${price(r.price)}` : (r.coin === 'USDT' ? 'Cash' : `Now ${price(r.price)}`);
+        return `<div class="row"><div class="grow"><span class="coin">${esc(r.coin)}</span> <span class="muted num">${esc(Number(num(r.amount).toPrecision(6)))}</span>
+            <div class="muted num" style="font-size:13px">${bought}</div>${r.cost_note ? `<div class="muted" style="font-size:12px">${esc(r.cost_note)}</div>` : ''}</div>
+          <div class="right"><div class="num" style="font-weight:600">${usd(r.value)}</div>${ch == null ? '' : `<div class="num ${cls(ch)}" style="font-size:13px">${pct(ch)} · ${signed(r.value - r.amount * r.avg_buy)}</div>`}</div></div>`;
+      }).join('') : '<div class="body muted">Loading your Binance wallet…</div>';
 
-      // spot
-      $('spot-title').textContent = d.mode && d.mode.exchange === 'binance' && !d.mode.live ? 'Paper wallet (pretend money)' : 'Spot holdings';
-      if (d.spot_today) $('spot-today').textContent = 'Today ' + signed(d.spot_today.realized, 2);
-      if (!editingBasis) {
-        const coinsHeld = spot.filter(h => h.coin !== 'USDT');
-        $('spot').innerHTML = coinsHeld.length ? coinsHeld.map(h => {
-          const known = h.buy_price > 0;
-          const profit = known ? `<span class="${cls(h.change_pct)}">${h.change_pct >= 0 ? '+' : '−'}${Math.abs(h.change_pct).toFixed(2)}%</span>` : '<span class="muted">–</span>';
-          let plan = 'Not managed';
-          if (h.source === 'bot') plan = `Bought by the bot. Sells when profit turns down after +2%, or at the stop ${price(h.stop_price)}`;
-          else if (h.tradable) plan = known ? `Your coin. Sold only at +${num(h.target_pct)}% (${price(h.buy_price * (1 + num(h.target_pct) / 100))}), never at a loss` : 'Your coin. Enter your buy price to set a sell target';
-          return `<tr><td><strong>${esc(h.coin)}</strong></td><td class="r num">${esc(Number(num(h.balance).toPrecision(6)))}</td><td class="r num">${h.price ? usd(h.value) : '–'}</td>
-            <td>${h.source === 'bot' ? `<span class="num">${price(h.buy_price)}</span> <span class="tag buy">Bot</span>` : h.tradable ? `<span class="row" style="flex-wrap:nowrap"><input type="number" step="any" min="0" data-coin="${esc(h.coin)}" value="${known ? h.buy_price : ''}" placeholder="price"><button class="small" data-save="${esc(h.coin)}">Save</button></span>` : '<span class="muted">–</span>'}</td>
-            <td class="r num">${profit}</td><td class="wrapcell">${esc(plan)}</td></tr>`;
-        }).join('') : '<tr><td colspan="6" class="muted">No coins in the spot wallet.</td></tr>';
-      }
+      // paper wallet
+      const pw = (d.spot_holdings || []).filter(h => num(h.value) > 0.005);
+      const pwTotal = pw.reduce((a, h) => a + num(h.value), 0);
+      if (!live && mode.paper_start) $('pw-sub').textContent = `pretend money · ${usd(pwTotal)} (${signed(pwTotal - num(mode.paper_start))} since ${new Date(mode.paper_started_at).toLocaleDateString()})`;
+      else $('pw-sub').textContent = live ? 'not used: live trading is on' : 'pretend money';
+      $('paper-body').innerHTML = pw.length ? pw.map(h => `<div class="row"><div class="grow"><span class="coin">${esc(h.coin)}</span> <span class="muted num">${esc(Number(num(h.balance).toPrecision(6)))}</span></div><div class="right num">${usd(h.value)}</div></div>`).join('') : '<div class="body muted">–</div>';
 
-      // logs (market scan lines are noise)
+      // activity
       const logs = (d.logs || []).filter(l => !/\[RADAR/.test(l.message));
       $('logs').innerHTML = logs.length ? logs.map(l => {
         const when = new Date(l.time.replace(' ', 'T') + 'Z');
-        const hhmm = isNaN(when) ? l.time : when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        return `<div class="${esc(l.level)}"><span class="t">${esc(hhmm)}</span>${esc(l.message)}</div>`;
-      }).join('') : '<div class="muted">Nothing yet.</div>';
-
-      // chart
-      if (candleSeries && ind.candles && ind.candles.length) {
-        const cs = ind.candles;
-        const times = cs.map(c => Math.floor(c.time / 1000));
-        const closes = cs.map(c => c.close);
-        candleSeries.setData(cs.map((c, i) => ({ time: times[i], open: c.open, high: c.high, low: c.low, close: c.close })));
-        [9, 21, 50].forEach((period, k) => {
-          const line = emaLine(closes, period);
-          emaSeries[k].setData(times.map((t, i) => line[i] == null ? { time: t } : { time: t, value: line[i] }));
-        });
-        const r = rsiLine(closes);
-        rsiSeries.setData(times.map((t, i) => r[i] == null ? { time: t } : { time: t, value: r[i] }));
-      }
-      if (ind.latest_price) {
-        $('lg-e9').textContent = price(ind.ema9);
-        $('lg-e21').textContent = price(ind.ema21);
-        $('lg-e50').textContent = price(ind.ema50);
-        $('lg-rsi').textContent = num(ind.current_rsi).toFixed(1);
-        const btc = (d.multi_coins || {})['BTCUSDT'] || {};
-        $('lg-trend').innerHTML = '1h trend ' + (btc.trend === 1 ? '<b class="up">Up</b>' : btc.trend === -1 ? '<b class="down">Down</b>' : '<b>Flat</b>');
-        const s = btc.signal;
-        $('chart-signal').innerHTML = s === 'BUY' ? '<span class="tag buy">Buy</span>' : s === 'SELL' ? '<span class="tag sell">Sell</span>' : 'Wait';
-      }
+        return `<div class="${esc(l.level)}"><span class="t">${esc(isNaN(when) ? l.time : when.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>${esc(l.message)}</div>`;
+      }).join('') : '<div class="muted" style="padding:0 16px 16px">Nothing yet.</div>';
     }
 
-    // ---- Alerts: sound + pop-up when a coin gets a Buy/Sell signal or the bot opens/closes a trade ----
-    let alertsOn = false;
-    try { alertsOn = localStorage.getItem('alerts') === 'on'; } catch (e) {}
-    let audioCtx = null;
-    let prevSignals = null;
-    let seenLogs = null;
-
+    // ---------- alerts (sound + pop-up) ----------
+    let alertsOn = false; try { alertsOn = localStorage.getItem('alerts') === 'on'; } catch (e) {}
+    let audioCtx = null, prevSignals = null, seenLogs = null;
     function beep(kind) {
       if (!alertsOn) return;
       try {
         audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx.state === 'suspended') audioCtx.resume();
-        // buy: rising two tones, sell: falling two tones, info: one tone
-        const notes = kind === 'buy' ? [660, 880] : kind === 'sell' ? [660, 440] : [560];
-        notes.forEach((f, i) => {
-          const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-          o.frequency.value = f; o.type = 'sine';
+        (kind === 'buy' ? [660, 880] : kind === 'sell' ? [660, 440] : [560]).forEach((f, i) => {
+          const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = f;
           const t0 = audioCtx.currentTime + i * 0.18;
-          g.gain.setValueAtTime(0.0001, t0);
-          g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
-          o.connect(g); g.connect(audioCtx.destination);
-          o.start(t0); o.stop(t0 + 0.17);
+          g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+          o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.17);
         });
       } catch (e) {}
     }
-
     function notify(kind, text) {
       if (!alertsOn) return;
       beep(kind);
-      const el = document.createElement('div');
-      el.className = 'toast ' + kind;
-      el.textContent = text;
-      $('toasts').appendChild(el);
-      setTimeout(() => el.remove(), 8000);
-      try {
-        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification('Bitunix Trader', { body: text });
-      } catch (e) {}
+      const el = document.createElement('div'); el.className = 'toast ' + kind; el.textContent = text; $('toasts').appendChild(el); setTimeout(() => el.remove(), 8000);
+      try { if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification('MHD Trader', { body: text }); } catch (e) {}
       if (navigator.vibrate) try { navigator.vibrate(kind === 'info' ? 100 : [80, 60, 80]); } catch (e) {}
     }
-
     function checkAlerts(d) {
-      // 1. Signals (already filtered by the 1h trend on the server)
       const now = {};
       for (const c of Object.values(d.multi_coins || {})) now[c.symbol] = c.signal;
-      if (prevSignals) {
-        for (const c of Object.values(d.multi_coins || {})) {
-          if (c.signal !== prevSignals[c.symbol] && (c.signal === 'BUY' || c.signal === 'SELL')) {
-            notify(c.signal === 'BUY' ? 'buy' : 'sell', `${c.name}: ${c.signal === 'BUY' ? 'Buy' : 'Sell'} signal at ${price(c.price)}. ${c.reason}`);
-          }
-        }
-      }
+      if (prevSignals) for (const c of Object.values(d.multi_coins || {})) if (c.signal !== prevSignals[c.symbol] && (c.signal === 'BUY' || c.signal === 'SELL')) notify(c.signal === 'BUY' ? 'buy' : 'sell', `${c.name}: ${c.signal} signal at ${price(c.price)}`);
       prevSignals = now;
-
-      // 2. Trades opened / closed and spot sales, from the activity log
-      const keyOf = (l) => l.time + '|' + l.message;
-      const logs = d.logs || [];
-      if (seenLogs) {
-        for (const l of logs.slice().reverse()) {
-          if (seenLogs.has(keyOf(l))) continue;
-          const m = l.message;
-          if (/Order Placed|\[MANUAL\]/.test(m)) notify(/ BUY /.test(m) ? 'buy' : 'sell', 'Bought: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
-          else if (/PROFIT LOCK|PROFIT PROTECT|\[SPOT SELL\] (Profit|Target)/.test(m)) notify('buy', 'Profit taken: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
-          else if (/STOP LOSS|Stop loss|DAILY GUARD\] Loss|FAILED/.test(m)) notify('sell', m.replace(/^\[[^\]]+\]\s*/, ''));
-        }
+      const key = (l) => l.time + '|' + l.message, logs = d.logs || [];
+      if (seenLogs) for (const l of logs.slice().reverse()) {
+        if (seenLogs.has(key(l))) continue;
+        const m = l.message.replace(/^\[[^\]]+\]\s*/, '');
+        if (/Order Placed|Opened (LONG|SHORT)/.test(l.message)) notify(/ BUY |LONG/.test(l.message) ? 'buy' : 'sell', m);
+        else if (/Profit taken|Profit protected|Target reached/.test(l.message)) notify('buy', m);
+        else if (/Stop loss|FAILED/.test(l.message)) notify('sell', m);
       }
-      seenLogs = new Set(logs.map(keyOf));
+      seenLogs = new Set(logs.map(key));
     }
-
-    function paintAlertsButton() {
-      $('btn-sound').textContent = alertsOn ? 'Alerts on' : 'Alerts off';
-      $('btn-sound').className = alertsOn ? 'primary' : '';
-    }
+    function paintSound() { $('btn-sound').textContent = alertsOn ? '🔔' : '🔕'; $('btn-sound').title = alertsOn ? 'Alerts on' : 'Alerts off'; }
     $('btn-sound').onclick = async () => {
-      alertsOn = !alertsOn;
-      try { localStorage.setItem('alerts', alertsOn ? 'on' : 'off'); } catch (e) {}
-      paintAlertsButton();
-      if (alertsOn) {
-        try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {}
-        notify('info', 'Alerts are on. You will hear a rising tone for Buy, a falling tone for Sell.');
-      }
+      alertsOn = !alertsOn; try { localStorage.setItem('alerts', alertsOn ? 'on' : 'off'); } catch (e) {}
+      paintSound();
+      if (alertsOn) { try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) {} notify('info', 'Alerts on: rising tone = buy, falling tone = sell.'); }
     };
-    paintAlertsButton();
+    paintSound();
 
-    async function refresh() {
-      try { const d = await api('/api/status?_t=' + Date.now()); render(d); checkAlerts(d); } catch (e) { /* keep last view */ }
-    }
-
-    async function toggleBot() {
-      if (running && !confirm('Stop the bot? It will not open new trades.')) return;
+    // ---------- actions ----------
+    async function refresh() { try { const d = await api('/api/status?_t=' + Date.now()); render(d); checkAlerts(d); } catch (e) {} }
+    $('btn-toggle').onclick = async () => {
+      if (running && !confirm('Stop the bot? It will not buy anything new.')) return;
       $('btn-toggle').disabled = true;
       const r = await api(running ? '/api/stop' : '/api/start', {});
-      if (r && r.code !== 0) alert(r.msg || 'The server could not save this. Try again.');
+      if (r && r.code !== 0) alert(r.msg || 'Could not save. Try again.');
       refresh();
-    }
-    async function closeAll() {
-      if (!confirm('Close all open trades now at market price?')) return;
-      const r = await api('/api/close_position', {});
-      if (r && r.code !== 0) alert(r.msg || 'Could not close');
-      refresh();
-    }
-    async function manual(side) {
-      if (!confirm(`Open a ${side === 'BUY' ? 'long (buy)' : 'short (sell)'} BTC trade now with real money?`)) return;
-      const r = await api('/api/manual_trade', { side });
-      alert(r.msg || 'Done');
-      refresh();
-    }
-
-    function openSettings() {
+    };
+    $('btn-settings').onclick = () => {
       const c = (lastData && lastData.config) || {};
-      $('cfg-multi').checked = c.multi_coin_mode !== false;
-      $('cfg-spot').checked = c.spot_auto_mode !== false;
-      $('cfg-spot-tp').value = c.spot_tp_pct;
-      $('cfg-max-loss').value = c.max_daily_loss_usd;
-      $('cfg-goal').value = c.daily_goal;
-      $('cfg-sl').value = c.stop_loss_margin_pct;
       $('cfg-live').checked = c.live_trading === true;
+      $('cfg-dca').checked = c.dca_enabled !== false;
+      $('cfg-dip').value = c.dca_dip_pct; $('cfg-step').value = c.dca_step_pct; $('cfg-tp').value = c.dca_tp_pct;
+      $('cfg-fut').checked = c.futures_paper_enabled !== false;
+      $('cfg-hourly').checked = c.hourly_report !== false;
       $('settings').showModal();
-    }
-    async function saveSettings(e) {
+    };
+    $('settings-cancel').onclick = () => $('settings').close();
+    $('settings-form').onsubmit = async (e) => {
       e.preventDefault();
-      const body = { multi_coin_mode: $('cfg-multi').checked, spot_auto_mode: $('cfg-spot').checked };
-      for (const [id, key] of [['cfg-spot-tp', 'spot_tp_pct'], ['cfg-max-loss', 'max_daily_loss_usd'], ['cfg-goal', 'daily_goal'], ['cfg-sl', 'stop_loss_margin_pct']]) {
-        const v = parseFloat($(id).value);
-        if (isFinite(v) && v > 0) body[key] = v;
-      }
-      const wantLive = $('cfg-live').checked;
-      const isLiveNow = !!(lastData && lastData.config && lastData.config.live_trading === true);
-      if (wantLive && !isLiveNow && !confirm('Turn on LIVE trading? The bot will buy and sell with your real money on Binance.')) return;
+      const c = (lastData && lastData.config) || {};
+      const body = { dca_enabled: $('cfg-dca').checked, futures_paper_enabled: $('cfg-fut').checked, hourly_report: $('cfg-hourly').checked };
+      for (const [id, k] of [['cfg-dip', 'dca_dip_pct'], ['cfg-step', 'dca_step_pct'], ['cfg-tp', 'dca_tp_pct']]) { const v = parseFloat($(id).value); if (isFinite(v) && v > 0) body[k] = v; }
+      const wantLive = $('cfg-live').checked, isLiveNow = c.live_trading === true;
+      if (wantLive && !isLiveNow && !confirm('Turn on LIVE trading? The bot will buy and sell ENA with your real money on Binance.')) return;
       if (wantLive !== isLiveNow) body.live_trading = wantLive;
       await api('/api/config', body);
       $('settings').close();
       refresh();
-    }
+    };
 
-    $('btn-toggle').onclick = toggleBot;
-    $('btn-settings').onclick = openSettings;
-    $('settings-cancel').onclick = () => $('settings').close();
-    $('settings-form').onsubmit = saveSettings;
-    $('btn-buy').onclick = () => manual('BUY');
-    $('btn-sell').onclick = () => manual('SELL');
-    $('spot').addEventListener('focusin', (e) => { if (e.target.matches('input')) editingBasis = true; });
-    $('spot').addEventListener('focusout', (e) => { if (e.target.matches('input')) setTimeout(() => { editingBasis = false; }, 400); });
-    $('spot').addEventListener('click', async (e) => {
-      const coin = e.target.getAttribute && e.target.getAttribute('data-save');
-      if (!coin) return;
-      const input = $('spot').querySelector(`input[data-coin="${coin}"]`);
-      await api('/api/spot_basis', { coin, price: parseFloat(input.value) || 0 });
-      editingBasis = false;
-      refresh();
-    });
+    // tabs follow the scroll
+    const tabLinks = [...document.querySelectorAll('#tabs a')];
+    const sections = tabLinks.map(a => document.querySelector(a.getAttribute('href')));
+    window.addEventListener('scroll', () => {
+      let idx = 0;
+      sections.forEach((s, i) => { if (s && s.getBoundingClientRect().top < 140) idx = i; });
+      tabLinks.forEach((a, i) => a.classList.toggle('active', i === idx));
+    }, { passive: true });
 
     initChart();
     refresh();

@@ -41,17 +41,17 @@ function isLoggedIn(req, password) {
 function loginPage(message) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login - Bitunix Trader</title>
+<title>Login - MHD Trader</title>
 <style>
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
-form{width:min(340px,calc(100vw - 32px));background:#121722;border:1px solid #1e2634;border-radius:12px;padding:24px;box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e11;color:#eaecef;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+form{width:min(340px,calc(100vw - 32px));background:#181a20;border:1px solid #2b3139;border-radius:12px;padding:24px;box-sizing:border-box}
 h1{font-size:18px;margin:0 0 16px}
-input{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid #2d3748;background:#0b0e14;color:#e2e8f0;font-size:16px}
-button{width:100%;margin-top:12px;padding:12px;border:0;border-radius:8px;background:#00d68f;color:#000;font-weight:700;font-size:16px}
+input{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid #2d3748;background:#0b0e11;color:#eaecef;font-size:16px}
+button{width:100%;margin-top:12px;padding:12px;border:0;border-radius:8px;background:#f0b90b;color:#181a20;font-weight:700;font-size:16px}
 p{color:#f6465d;font-size:14px;margin:12px 0 0}
 </style></head><body>
 <form method="POST" action="/login">
-<h1>Bitunix Trader</h1>
+<h1>MHD Trader</h1>
 <input type="password" id="pw" name="password" placeholder="Password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus required>
 <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:#94a3b8"><input type="checkbox" style="width:auto" onclick="document.getElementById('pw').type=this.checked?'text':'password'"> Show password</label>
 <button type="submit">Login</button>
@@ -205,7 +205,7 @@ function secretsFromEnv() {
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
   'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct', 'live_trading', 'hourly_report',
-  'dca_enabled', 'dca_dip_pct', 'dca_step_pct', 'dca_tp_pct',
+  'dca_enabled', 'dca_dip_pct', 'dca_step_pct', 'dca_tp_pct', 'futures_paper_enabled',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
   'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
@@ -1073,6 +1073,9 @@ async function placeSpot(sym, side, { quote, qty, price }) {
 }
 
 const DCA_PATH = path.join(STATE_DIR, '.bitunix-trader-dca.json');
+const futuresTest = require('./futures-paper.js').createFuturesPaper({
+  path: path.join(STATE_DIR, '.bitunix-trader-futures-test.json'), getConfig: () => config, log, alert: (t) => sendTelegramAlert(t)
+});
 const dca = require('./dca.js').createDca({
   path: DCA_PATH, getConfig: () => config, BN, placeSpot, spotRules,
   log, alert: (t) => sendTelegramAlert(t), isLive, health: { set lastOrderAt(v) { health.lastOrderAt = v; }, set lastOrderError(v) { health.lastOrderError = v; } }
@@ -1114,6 +1117,7 @@ async function spotTick() {
     if (!sAcc || !sAcc.ok || !Array.isArray(sAcc.data)) return;
     spotBalance = sAcc.data;
     if (EXCHANGE === 'binance') await dca.tick(sAcc.data, isRunning);
+    if (EXCHANGE === 'binance') futuresTest.tick(multiCoinScanner, isRunning);
 
     const today = tradingDay();
     if (spotDay !== today) { spotDay = today; spotRealizedToday = 0; }
@@ -1324,6 +1328,10 @@ async function hourlyReport() {
       ? `*${v.coin} DCA:* ${v.round.buys} buy(s), average ${p(v.round.avg_price)}, now ${p(v.price)}, sells all at ${p(v.round.sell_at)}${v.round.next_buy_at ? `, next buy at ${p(v.round.next_buy_at)}` : ''}\nRounds done: ${v.cycles}, profit ${v.realized >= 0 ? '+' : '-'}$${Math.abs(v.realized).toFixed(2)}\n\n`
       : `*${v.coin} DCA:* waiting. Now ${p(v.price)}, first buy at ${p(v.first_buy_at)} (24h high ${p(v.high24)} −${v.settings.dip_pct}%)\nRounds done: ${v.cycles}, profit ${v.realized >= 0 ? '+' : '-'}$${Math.abs(v.realized).toFixed(2)}\n\n`;
   }
+  if (EXCHANGE === 'binance') {
+    const f = futuresTest.view(multiCoinScanner);
+    if (f.enabled) dcaLine += `*Futures test (paper):* $${f.equity.toFixed(2)} (${f.change >= 0 ? '+' : '-'}$${Math.abs(f.change).toFixed(2)} since start), ${f.trades} trades, ${f.wins} won${f.open ? `, open ${f.open.side} ${f.open.coin} ${f.open.pnl != null ? (f.open.pnl >= 0 ? '+' : '-') + '$' + Math.abs(f.open.pnl).toFixed(2) : ''}` : ''}\n\n`;
+  }
   const held = Object.entries(spotHoldings).filter(([, r]) => r.source === 'bot').map(([c]) => c);
   const state = !readRunning() ? '⏸ Bot is STOPPED' : isLive() ? '✅ Live trading' : '📝 Paper mode';
   sendTelegramAlert(`🕐 *Hourly signals* — ${state}\n\n${dcaLine}${lines.join('\n')}${wallet}\nBot coins held: ${held.length ? held.join(', ') : 'none'}\nToday: ${spotRealizedToday >= 0 ? '+' : '-'}$${Math.abs(spotRealizedToday).toFixed(2)}`);
@@ -1458,6 +1466,7 @@ function buildStatus(liveBal, livePositions) {
     spot_holdings: spotSummary(),
     real_wallet: EXCHANGE === 'binance' ? realWallet : null,
     dca: EXCHANGE === 'binance' ? dca.view() : null,
+    futures_test: EXCHANGE === 'binance' ? futuresTest.view(multiCoinScanner) : null,
     spot_today: { realized: spotRealizedToday, max_loss: parseFloat(config.max_daily_loss_usd || 1.5) },
     mode: { futures: EXCHANGE !== 'binance' && config.futures_trading === true, spot: config.spot_trading !== false, exchange: EXCHANGE, live: isLive(), paper_start: paper ? paper.start : null, paper_started_at: paper ? paper.startedAt : null },
     live_positions: livePositions,
