@@ -557,7 +557,8 @@
     async function toggleBot() {
       if (running && !confirm('Stop the bot? It will not open new trades.')) return;
       $('btn-toggle').disabled = true;
-      await api(running ? '/api/stop' : '/api/start', {});
+      const r = await api(running ? '/api/stop' : '/api/start', {});
+      if (r && r.code !== 0) alert(r.msg || 'The server could not save this. Try again.');
       refresh();
     }
     async function closeAll() {

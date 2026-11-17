@@ -373,9 +373,21 @@ function readRunning() {
   const st = readJson(STATE_PATH);
   return st && typeof st.running === 'boolean' ? st.running : true;
 }
+let lastControl = null; // last Start/Stop press, shown on /health
 function writeRunning(value) {
-  try { fs.writeFileSync(STATE_PATH, JSON.stringify({ running: value, at: new Date().toISOString() }), 'utf-8'); } catch (e) {
+  const body = JSON.stringify({ running: value, at: new Date().toISOString() });
+  try {
+    const tmp = STATE_PATH + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, body, 'utf-8');
+    fs.renameSync(tmp, STATE_PATH);
+    const back = readJson(STATE_PATH);
+    const ok = !!back && back.running === value;
+    lastControl = { action: value ? 'start' : 'stop', at: new Date().toISOString(), saved: ok, error: ok ? null : 'saved file did not read back' };
+    return ok;
+  } catch (e) {
     console.error('State save error:', e.message);
+    lastControl = { action: value ? 'start' : 'stop', at: new Date().toISOString(), saved: false, error: String(e.code || e.message).slice(0, 60) };
+    return false;
   }
 }
 // Only the process holding a fresh leader lock may place or close orders.
@@ -1071,6 +1083,7 @@ app.get('/health', (req, res) => {
   for (const [sym, c] of Object.entries(multiCoinScanner)) signals[sym] = { signal: c.signal, trend: c.trend, reason: c.reason, site: c.site_label ? `${c.site_label} (${c.site_score})` : null };
   res.json({
     running: readRunning(),
+    last_start_stop: lastControl,
     trading_copy: isLeader,
     paused_for_today: guardReason,
     futures_trading: config.futures_trading === true,
@@ -1253,19 +1266,24 @@ app.post('/api/config', (req, res) => {
 
 app.post('/api/start', (req, res) => {
   isRunning = true;
-  writeRunning(true);
+  const saved = writeRunning(true);
+  if (!saved) {
+    log(`[CONTROL] Start could not be saved (${lastControl && lastControl.error}).`, 'ERROR');
+    return res.json({ code: -1, msg: 'Start could not be saved on the server: ' + (lastControl && lastControl.error) });
+  }
   dayStartEquity = null; // pressing Start re-measures today's baseline (use after a deposit or withdrawal)
   log("Bot Started", "INFO");
-  sendTelegramAlert("🟢 *Strategic Bot Started!* Uncapped Profit Runner active on 5 markets.");
-  res.json({ code: 0 });
+  sendTelegramAlert("🟢 *Bot started.* Spot trading is on.");
+  res.json({ code: 0, running: readRunning() });
 });
 
 app.post('/api/stop', (req, res) => {
   isRunning = false;
-  writeRunning(false);
+  const saved = writeRunning(false);
+  if (!saved) log(`[CONTROL] Stop could not be saved (${lastControl && lastControl.error}).`, 'ERROR');
   log("Bot Stopped", "INFO");
-  sendTelegramAlert("🛑 *Bot Stopped!* Auto-Trading paused.");
-  res.json({ code: 0 });
+  sendTelegramAlert("🛑 *Bot stopped.* No new trades.");
+  res.json({ code: saved ? 0 : -1, running: readRunning(), msg: saved ? 'Stopped' : 'Stop could not be saved on the server' });
 });
 
 // The owner tells the bot what they paid for a spot coin (0 clears it)
