@@ -173,6 +173,8 @@
       <section id="dca">
         <h2><span id="dca-title">ENA DCA</span> <small id="dca-sub"></small></h2>
         <div id="dca-body"><div class="body muted">Loading…</div></div>
+        <h2 style="border-top:1px solid var(--line)">Fast ENA test <small id="fast-sub">pretend money · compare with the live one</small></h2>
+        <div id="fast-body"><div class="body muted">Loading…</div></div>
       </section>
 
       <section id="futures">
@@ -342,6 +344,22 @@
             <div class="levels"><div><div class="label">Price now</div><div class="v num">${price(dv.price)}</div></div>
               <div><div class="label">24h high</div><div class="v num">${price(dv.high24)}</div></div>
               <div><div class="label">First buy at</div><div class="v num accent">${price(dv.first_buy_at)}${gap != null ? ` <span class="muted" style="font-weight:400">(${pct(gap, 1)})</span>` : ''}</div></div></div>` + rules;
+        }
+      }
+
+      // fast DCA test (paper only)
+      const fd = d.dca_fast;
+      if (fd) {
+        const st = fd.settings, w = fd.wallet || {};
+        $('fast-sub').textContent = fd.enabled ? `pretend money · ${usd(w.equity)} (${signed(w.change)} since ${new Date(w.startedAt).toLocaleDateString()}) · ${fd.cycles} rounds` : 'off';
+        const rules = `<div class="rules">Test rules: buy $${num(st.base_usdt).toFixed(2)} when ${esc(fd.coin)} is ${st.dip_pct}% below its ${st.look_hours}h high · more every ${st.step_pct}% lower · max ${st.max_buys} buys · sell at +${st.tp_pct}% or after ${st.hold_hours}h at any price. In the 7-month backtest this lost money (−$6.38); it runs here only so you can see it with your own eyes.</div>`;
+        if (!fd.enabled) $('fast-body').innerHTML = '<div class="body muted">Off.</div>';
+        else if (fd.round) {
+          const r = fd.round; const chg = r.value_now != null ? r.value_now - r.spent : null;
+          $('fast-body').innerHTML = `<div class="row"><div class="grow"><span class="coin">${esc(fd.coin)}</span> <span class="tag buy">Holding</span> <span class="muted">${r.buys}/${st.max_buys} buys · ${usd(r.spent)} in · sells at ${price(r.sell_at)} or at ${new Date(r.force_sell_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
+            <div class="right"><div class="big num ${cls(chg)}">${chg == null ? '–' : signed(chg)}</div><div class="muted" style="font-size:12px">if sold now</div></div></div>` + rules;
+        } else {
+          $('fast-body').innerHTML = `<div class="row"><div class="grow"><span class="coin">${esc(fd.coin)}</span> <span class="tag wait">Waiting</span> <span class="muted num">now ${price(fd.price)} · buys at ${price(fd.first_buy_at)}</span></div></div>` + rules;
         }
       }
 

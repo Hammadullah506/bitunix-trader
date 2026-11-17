@@ -99,7 +99,15 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'templates'), { index: false }));
 
-const CONFIG_PATH = path.join(__dirname, 'config.json');
+// Settings changed on the dashboard are kept outside the app folder (a redeploy replaces the
+// app folder, which used to switch live trading back off). config.json in the repo is the base.
+const REPO_CONFIG_PATH = path.join(__dirname, 'config.json');
+const CONFIG_PATH = (() => {
+  for (const dir of [require('os').homedir(), require('os').tmpdir()]) {
+    try { fs.accessSync(dir, fs.constants.W_OK); return path.join(dir, '.bitunix-trader-config.json'); } catch (e) {}
+  }
+  return REPO_CONFIG_PATH;
+})();
 
 const COIN_CONFIGS = {
   'BTCUSDT': { qty: '0.0004', name: 'BTC', precision: 4 },
@@ -158,14 +166,18 @@ function loadConfig() {
     dca_symbol: 'ENAUSDT',
     dca_dip_pct: 8,               // first buy: this % below the last 24h high
     dca_step_pct: 5,              // next buy: this % below the previous buy
-    dca_mult: 1.5,                // each next buy is this many times bigger
-    dca_max_buys: 3,              // 6.5 + 9.75 + 14.63 = $30.9 at most
-    dca_base_usdt: 6.5,
+    dca_mult: 1.4,                // each next buy is this many times bigger
+    dca_max_buys: 3,              // 7 + 9.80 + 13.72 = $30.52 at most
+    dca_base_usdt: 7,
     dca_tp_pct: 1.5,              // sell all at this % above the average cost, after fees
-    strategy_version: 6,
+    strategy_version: 7,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
+  // first run with the new location: carry over what the app folder had (e.g. live trading on)
+  if (CONFIG_PATH !== REPO_CONFIG_PATH && !fs.existsSync(CONFIG_PATH) && fs.existsSync(REPO_CONFIG_PATH)) {
+    try { fs.copyFileSync(REPO_CONFIG_PATH, CONFIG_PATH); } catch (e) {}
+  }
   if (fs.existsSync(CONFIG_PATH)) {
     try {
       const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -205,7 +217,7 @@ function secretsFromEnv() {
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
   'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct', 'live_trading', 'hourly_report',
-  'dca_enabled', 'dca_dip_pct', 'dca_step_pct', 'dca_tp_pct', 'futures_paper_enabled',
+  'dca_enabled', 'dca_dip_pct', 'dca_step_pct', 'dca_tp_pct', 'futures_paper_enabled', 'dca_fast_enabled',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
   'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
@@ -1076,6 +1088,12 @@ const DCA_PATH = path.join(STATE_DIR, '.bitunix-trader-dca.json');
 const futuresTest = require('./futures-paper.js').createFuturesPaper({
   path: path.join(STATE_DIR, '.bitunix-trader-futures-test.json'), getConfig: () => config, log, alert: (t) => sendTelegramAlert(t)
 });
+const dcaFast = require('./dca.js').createDca({
+  path: path.join(STATE_DIR, '.bitunix-trader-dca-fast.json'), prefix: 'dca_fast_', label: 'Fast test', paperOnly: true,
+  // the best "about 3 rounds a day, sell after 8 hours" setting from the 7-month backtest (it lost money there)
+  defaults: { look_hours: 6, dip_pct: 3, step_pct: 3, mult: 1.0, max_buys: 3, tp_pct: 1.5, base_usdt: 7, hold_hours: 8, paper_usdt: 31 },
+  getConfig: () => config, BN, placeSpot, spotRules, log, alert: (t) => sendTelegramAlert(t), isLive, health: {}
+});
 const dca = require('./dca.js').createDca({
   path: DCA_PATH, getConfig: () => config, BN, placeSpot, spotRules,
   log, alert: (t) => sendTelegramAlert(t), isLive, health: { set lastOrderAt(v) { health.lastOrderAt = v; }, set lastOrderError(v) { health.lastOrderError = v; } }
@@ -1117,6 +1135,7 @@ async function spotTick() {
     if (!sAcc || !sAcc.ok || !Array.isArray(sAcc.data)) return;
     spotBalance = sAcc.data;
     if (EXCHANGE === 'binance') await dca.tick(sAcc.data, isRunning);
+    if (EXCHANGE === 'binance') await dcaFast.tick(sAcc.data, isRunning);
     if (EXCHANGE === 'binance') futuresTest.tick(multiCoinScanner, isRunning);
 
     const today = tradingDay();
@@ -1329,6 +1348,8 @@ async function hourlyReport() {
       : `*${v.coin} DCA:* waiting. Now ${p(v.price)}, first buy at ${p(v.first_buy_at)} (24h high ${p(v.high24)} −${v.settings.dip_pct}%)\nRounds done: ${v.cycles}, profit ${v.realized >= 0 ? '+' : '-'}$${Math.abs(v.realized).toFixed(2)}\n\n`;
   }
   if (EXCHANGE === 'binance') {
+    const ft = dcaFast.view();
+    if (ft.enabled) dcaLine += `*Fast ENA test (paper):* $${ft.wallet.equity.toFixed(2)} (${ft.wallet.change >= 0 ? '+' : '-'}$${Math.abs(ft.wallet.change).toFixed(2)} since start), ${ft.cycles} rounds${ft.round ? ', round open' : ''}\n`;
     const f = futuresTest.view(multiCoinScanner);
     if (f.enabled) dcaLine += `*Futures test (paper):* $${f.equity.toFixed(2)} (${f.change >= 0 ? '+' : '-'}$${Math.abs(f.change).toFixed(2)} since start), ${f.trades} trades, ${f.wins} won${f.open ? `, open ${f.open.side} ${f.open.coin} ${f.open.pnl != null ? (f.open.pnl >= 0 ? '+' : '-') + '$' + Math.abs(f.open.pnl).toFixed(2) : ''}` : ''}\n\n`;
   }
@@ -1466,6 +1487,7 @@ function buildStatus(liveBal, livePositions) {
     spot_holdings: spotSummary(),
     real_wallet: EXCHANGE === 'binance' ? realWallet : null,
     dca: EXCHANGE === 'binance' ? dca.view() : null,
+    dca_fast: EXCHANGE === 'binance' ? dcaFast.view() : null,
     futures_test: EXCHANGE === 'binance' ? futuresTest.view(multiCoinScanner) : null,
     spot_today: { realized: spotRealizedToday, max_loss: parseFloat(config.max_daily_loss_usd || 1.5) },
     mode: { futures: EXCHANGE !== 'binance' && config.futures_trading === true, spot: config.spot_trading !== false, exchange: EXCHANGE, live: isLive(), paper_start: paper ? paper.start : null, paper_started_at: paper ? paper.startedAt : null },
