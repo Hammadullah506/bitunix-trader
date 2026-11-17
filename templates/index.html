@@ -164,7 +164,7 @@
 
       <div class="stats">
         <div class="stat">
-          <div class="label">Futures wallet</div>
+          <div class="label" id="s-first-label">Futures wallet</div>
           <div class="value num" id="s-futures">–</div>
           <div class="sub num" id="s-margin">&nbsp;</div>
         </div>
@@ -248,6 +248,7 @@
       <label><span>Daily loss limit, $<small>No new trades after losing this much in a day</small></span><input type="number" id="cfg-max-loss" step="0.1" min="0.1"></label>
       <label><span>Daily goal, $<small>No new trades after earning this much in a day</small></span><input type="number" id="cfg-goal" step="0.1" min="0.1"></label>
       <label><span>Stop loss, % of margin<small>A losing trade is closed at this loss</small></span><input type="number" id="cfg-sl" step="1" min="2" max="80"></label>
+      <label><span>Real money (live trading)<small>Off = paper mode, no real orders</small></span><input type="checkbox" id="cfg-live"></label>
       <div class="actions">
         <button type="button" id="settings-cancel">Cancel</button>
         <button type="submit" class="primary">Save</button>
@@ -353,7 +354,9 @@
       // notice
       const n = $('notice');
       let msg = '';
-      if (!cfg.api_key || !cfg.secret_key) msg = 'Bitunix API key is not set on the server. Add BITUNIX_API_KEY and BITUNIX_SECRET_KEY in the hosting environment variables.';
+      const mode = d.mode || {};
+      if (mode.exchange !== 'binance' && (!cfg.api_key || !cfg.secret_key)) msg = 'Bitunix API key is not set on the server. Add BITUNIX_API_KEY and BITUNIX_SECRET_KEY in the hosting environment variables.';
+      else if (mode.exchange === 'binance' && !mode.live && running) msg = 'Paper mode: the bot trades with a pretend wallet at real Binance prices. No real orders are sent.';
       else if (guard.paused === 'loss') msg = 'Daily loss limit reached. No new trades until tomorrow; open trades are still managed.';
       else if (guard.paused === 'goal') msg = 'Daily goal reached. No new trades until tomorrow.';
       else if (!running) msg = 'The bot is stopped. It will not open new trades. Open trades are still watched and closed by the rules.';
@@ -361,7 +364,20 @@
 
       // stats
       const bal = d.live_balance;
-      if (bal) {
+      if (mode.exchange === 'binance') {
+        $('s-first-label').textContent = mode.live ? 'Binance (real money)' : 'Binance (paper mode)';
+        const spotNow = (d.spot_holdings || []).reduce((a, h) => a + num(h.value), 0);
+        if (!mode.live && mode.paper_start) {
+          const chg = spotNow - num(mode.paper_start);
+          $('s-futures').textContent = signed(chg);
+          $('s-futures').className = 'value num ' + cls(chg);
+          $('s-margin').textContent = 'Paper wallet since ' + new Date(mode.paper_started_at).toLocaleDateString() + ' (started ' + usd(mode.paper_start) + ')';
+        } else {
+          $('s-futures').textContent = mode.live ? 'Live' : 'Paper';
+          $('s-futures').className = 'value num';
+          $('s-margin').textContent = mode.live ? 'Orders use real money' : 'No real orders';
+        }
+      } else if (bal) {
         const total = num(bal.available) + num(bal.margin) + num(bal.frozen) + num(bal.crossUnrealizedPNL) + num(bal.isolationUnrealizedPNL);
         $('s-futures').textContent = usd(total);
         $('s-margin').textContent = num(bal.margin) > 0 ? usd(bal.margin) + ' in trades' : 'Nothing in trades';
@@ -582,6 +598,7 @@
       $('cfg-max-loss').value = c.max_daily_loss_usd;
       $('cfg-goal').value = c.daily_goal;
       $('cfg-sl').value = c.stop_loss_margin_pct;
+      $('cfg-live').checked = c.live_trading === true;
       $('settings').showModal();
     }
     async function saveSettings(e) {
@@ -591,6 +608,10 @@
         const v = parseFloat($(id).value);
         if (isFinite(v) && v > 0) body[key] = v;
       }
+      const wantLive = $('cfg-live').checked;
+      const isLiveNow = !!(lastData && lastData.config && lastData.config.live_trading === true);
+      if (wantLive && !isLiveNow && !confirm('Turn on LIVE trading? The bot will buy and sell with your real money on Binance.')) return;
+      if (wantLive !== isLiveNow) body.live_trading = wantLive;
       await api('/api/config', body);
       $('settings').close();
       refresh();

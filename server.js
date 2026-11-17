@@ -152,6 +152,7 @@ function loadConfig() {
     spot_protect_floor_pct: 0.3,  // ...sell before it drops below this
     spot_stop_pct: 3,             // sell a losing coin at this % below the buy price
     spot_site_min_score: 25,      // MHD Trade site score needed to buy (25 = Buy, 60 = Strong Buy)
+    live_trading: false,          // false = paper mode: real prices and decisions, no real orders
     strategy_version: 5,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
@@ -176,6 +177,12 @@ function loadConfig() {
 
 // Secrets live ONLY in environment variables (hosting panel), never in git or config.json
 const SECRET_FIELDS = ['api_key', 'secret_key', 'telegram_bot_token'];
+// Which exchange the bot trades on. Binance is used as soon as its key is set.
+const EXCHANGE = (process.env.EXCHANGE || (process.env.BINANCE_API_KEY ? 'binance' : 'bitunix')).toLowerCase();
+const BN = require('./binance.js');
+const BINANCE_KEY = process.env.BINANCE_API_KEY || '';
+const BINANCE_SECRET = process.env.BINANCE_SECRET_KEY || '';
+
 function secretsFromEnv() {
   return {
     api_key: process.env.BITUNIX_API_KEY || "",
@@ -187,7 +194,7 @@ function secretsFromEnv() {
 
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
-  'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct',
+  'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct', 'live_trading',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
   'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
@@ -203,6 +210,10 @@ function publicConfig() {
 let config = loadConfig();
 
 function saveConfig(newCfg) {
+  if (newCfg && typeof newCfg.live_trading === 'boolean' && newCfg.live_trading !== (config.live_trading === true)) {
+    log(newCfg.live_trading ? '[MODE] Switched to LIVE trading with real money.' : '[MODE] Switched to PAPER trading (no real orders).', 'WARNING');
+    sendTelegramAlert(newCfg.live_trading ? '⚠️ *Live trading ON* — the bot now uses real money.' : '📝 *Paper trading* — no real orders.');
+  }
   const allowed = {};
   for (const f of EDITABLE_FIELDS) {
     if (newCfg && Object.prototype.hasOwnProperty.call(newCfg, f)) allowed[f] = newCfg[f];
@@ -475,6 +486,7 @@ function tradingDay() {
 // Measures today's real result from the futures wallet itself, so fees and
 // exchange-side stop-losses are counted too.
 async function updateDailyGuard() {
+  if (EXCHANGE === 'binance') { guardReason = null; return null; } // spot has its own daily limit
   const acc = await bitunixRequest('GET', '/api/v1/futures/account', { marginCoin: 'USDT' }, null, true);
   if (!acc || acc.code !== 0 || !acc.data) return null;
   const d = acc.data;
@@ -521,6 +533,17 @@ function log(message, level = 'INFO') {
 }
 
 // Parallel Ultra-Fast Multi-Coin Scan
+// Candles from the active exchange, in one shape: { code: 0, data: [{ time, open, high, low, close, baseVol }] }
+async function marketKlines(sym, interval, limit, endTime) {
+  if (EXCHANGE === 'binance') {
+    try { return { code: 0, data: await BN.klines(sym, interval, limit, endTime) }; }
+    catch (e) { return { code: -1, msg: e.message }; }
+  }
+  const params = { symbol: sym, interval, limit };
+  if (endTime) params.endTime = endTime;
+  return bitunixRequest('GET', '/api/v1/futures/market/kline', params);
+}
+
 async function futuresTick() {
   const interval = config.interval || '5m';
   const symbolsToScan = config.multi_coin_mode ? Object.keys(COIN_CONFIGS) : [config.symbol || 'BTCUSDT'];
@@ -529,7 +552,7 @@ async function futuresTick() {
   // Run all coin scans in parallel for ultra-fast response
   const scanPromises = symbolsToScan.map(async (sym) => {
     try {
-      const kRes = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: interval, limit: sym === (config.symbol || 'BTCUSDT') ? 120 : 50 });
+      const kRes = await marketKlines(sym, interval, sym === (config.symbol || 'BTCUSDT') ? 120 : 50);
       if (!kRes || kRes.code !== 0 || !Array.isArray(kRes.data) || kRes.data.length < 20) return null;
 
       const allSorted = [...kRes.data].sort((a, b) => parseInt(a.time) - parseInt(b.time));
@@ -688,12 +711,12 @@ async function futuresTick() {
   }
 
   // Active Futures Positions Monitoring
-  const posRes = await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
+  const posRes = EXCHANGE === 'binance' ? { code: 0, data: [] } : await bitunixRequest('GET', '/api/v1/futures/position/get_pending_positions', null, null, true);
   const activePositions = (posRes && posRes.code === 0 && Array.isArray(posRes.data)) 
     ? posRes.data.filter(p => parseFloat(p.qty) > 0)
     : [];
-  health.apiOk = !!(posRes && posRes.code === 0);
-  if (health.apiOk) lastPositionCount = activePositions.length;
+  if (EXCHANGE !== 'binance') health.apiOk = !!(posRes && posRes.code === 0);
+  if (posRes && posRes.code === 0) lastPositionCount = activePositions.length;
   else if (posRes && scanTickCount % 12 === 0) log(`[EXCHANGE] Position check failed: ${posRes.code} ${posRes.msg}`, 'ERROR');
 
   // Check for positions that closed (e.g. Stop Loss executed by exchange)
@@ -872,7 +895,7 @@ async function refreshSiteScore(sym) {
   const rows = {};
   let end = Date.now();
   for (let page = 0; page < 2; page++) {
-    const res = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: '1h', limit: 200, endTime: end });
+    const res = await marketKlines(sym, '1h', 200, end);
     if (!res || res.code !== 0 || !Array.isArray(res.data) || !res.data.length) break;
     for (const c of res.data) rows[c.time] = { time: parseInt(c.time), open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.baseVol || 0) };
     end = Math.min(...res.data.map(c => parseInt(c.time))) - 1;
@@ -888,7 +911,7 @@ const hourlyCache = {};
 async function hourlyTrend(sym, price) {
   const cached = hourlyCache[sym];
   if (!cached || Date.now() - cached.at > 60 * 1000) {
-    const res = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: '1h', limit: 61 });
+    const res = await marketKlines(sym, '1h', 61);
     if (res && res.code === 0 && Array.isArray(res.data) && res.data.length >= 61) {
       const sorted = [...res.data].sort((a, b) => parseInt(a.time) - parseInt(b.time));
       hourlyCache[sym] = { at: Date.now(), closes: sorted.slice(0, -1).map(c => parseFloat(c.close)) };
@@ -927,47 +950,94 @@ async function closeSpecificPosition(p) {
 // Spot trading. Buys only on a Buy signal that agrees with the 1-hour uptrend
 // (the same filtered signals the dashboard shows), sells on the exit rules below.
 // Coins the owner bought themselves are only sold at their own target, never at a loss.
-async function spotOrder(sym, side, volume) {
-  return bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
-    symbol: sym,
-    side: side,          // 1 = sell, 2 = buy
-    type: 2,             // market
-    volume: String(volume),
-    price: '0'
-  }, true, true);
+// Paper wallet: starts from the real USDT balance (or $33), trades at live prices with fees.
+const PAPER_PATH = path.join(STATE_DIR, '.bitunix-trader-paper.json');
+let paper = readJson(PAPER_PATH);
+function savePaper() { try { fs.writeFileSync(PAPER_PATH, JSON.stringify(paper), 'utf-8'); } catch (e) {} }
+const isLive = () => config.live_trading === true;
+
+// Spot balances as [{ coin, balance }] (free amounts)
+async function getSpotAccount() {
+  let real = null;
+  if (EXCHANGE === 'binance') {
+    if (BINANCE_KEY && BINANCE_SECRET) {
+      try { real = await BN.balances(BINANCE_KEY, BINANCE_SECRET); } catch (e) { real = { ok: false, msg: e.message }; }
+      health.apiOk = !!real.ok;
+      if (!real.ok && scanTickCount % 60 === 0) log(`[BINANCE] Account check failed: ${real.msg}`, 'ERROR');
+    } else {
+      health.apiOk = false;
+    }
+  } else {
+    const sAcc = await bitunixRequest('GET', '/api/spot/v1/user/account', null, null, true, true);
+    real = sAcc && (sAcc.code === 0 || sAcc.code === '0') && Array.isArray(sAcc.data) ? { ok: true, data: sAcc.data } : { ok: false };
+  }
+  if (isLive()) return real && real.ok ? real : { ok: false };
+
+  if (!paper) {
+    const usdt = real && real.ok ? parseFloat((real.data.find(c => c.coin === 'USDT') || {}).balance || 0) : 0;
+    paper = { usdt: usdt > 0 ? usdt : 33, coins: {}, startedAt: new Date().toISOString(), start: usdt > 0 ? usdt : 33 };
+    savePaper();
+    log(`[PAPER] Paper wallet started with $${paper.usdt.toFixed(2)} USDT. No real orders will be sent.`, 'INFO');
+  }
+  return { ok: true, data: [{ coin: 'USDT', balance: String(paper.usdt) }, ...Object.entries(paper.coins).filter(([, v]) => v > 0).map(([coin, v]) => ({ coin, balance: String(v) }))] };
 }
 
-// Average fill price and quantity of a spot order (null if the exchange does not say)
-async function spotFill(sym, orderId) {
-  if (!orderId) return null;
-  await new Promise(r => setTimeout(r, 1500));
-  const res = await bitunixRequest('POST', '/api/spot/v1/order/deal/list', null, { orderId: String(orderId), symbol: sym }, true, true);
-  const rows = res && (res.code === 0 || res.code === '0') ? (Array.isArray(res.data) ? res.data : res.data ? [res.data] : []) : [];
-  let qty = 0, quote = 0;
-  for (const r of rows) {
-    const v = parseFloat(r.volume || 0), pr = parseFloat(r.price || 0);
-    if (v > 0 && pr > 0) { qty += v; quote += v * pr; }
+// Exchange order rules for a coin
+async function spotRules(sym) {
+  if (EXCHANGE === 'binance') {
+    try { const r = await BN.rules(Object.keys(COIN_CONFIGS)); if (r[sym]) return r[sym]; } catch (e) {}
+    return { stepSize: Math.pow(10, -(SPOT_BASE_PRECISION[sym.replace('USDT', '')] ?? 4)), minNotional: 5, minQty: 0 };
   }
-  return qty > 0 ? { qty, price: quote / qty } : null;
+  return { stepSize: Math.pow(10, -(SPOT_BASE_PRECISION[sym.replace('USDT', '')] ?? 4)), minNotional: 10, minQty: 0 };
+}
+
+// Market buy (quote = USDT amount) or sell (qty = coin amount). Returns { ok, msg, fill: { qty, price } }
+async function placeSpot(sym, side, { quote, qty, price }) {
+  const coin = sym.replace('USDT', '');
+  const fee = parseFloat(config.spot_fee_pct ?? 0.1) / 100;
+  if (!isLive()) {
+    const px = price * (side === 'BUY' ? 1.0005 : 0.9995); // a little slippage
+    if (side === 'BUY') {
+      if (quote > paper.usdt + 1e-9) return { ok: false, msg: 'paper: not enough USDT' };
+      const got = (quote / px) * (1 - fee);
+      paper.usdt -= quote; paper.coins[coin] = (paper.coins[coin] || 0) + got;
+      savePaper();
+      return { ok: true, fill: { qty: got, price: px } };
+    }
+    const have = paper.coins[coin] || 0;
+    const q = Math.min(qty, have);
+    paper.coins[coin] = have - q; paper.usdt += q * px * (1 - fee);
+    savePaper();
+    return { ok: true, fill: { qty: q, price: px } };
+  }
+  if (EXCHANGE === 'binance') {
+    const r = await BN.marketOrder(sym, side, { quote, qty }, BINANCE_KEY, BINANCE_SECRET);
+    if (!r.ok) return r;
+    return { ok: true, fill: BN.fillOf(r.order, coin) };
+  }
+  const res = await bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
+    symbol: sym, side: side === 'BUY' ? 2 : 1, type: 2, volume: String(side === 'BUY' ? quote.toFixed(2) : qty), price: '0'
+  }, true, true);
+  if (!(res && (res.code === 0 || res.code === '0'))) return { ok: false, msg: res ? `${res.code} ${res.msg}` : 'no response' };
+  return { ok: true, fill: null };
 }
 
 async function sellSpot(item, sym, price, qty, why, netPct) {
-  const prec = SPOT_BASE_PRECISION[item.coin] ?? 4;
-  const vol = floorTo(qty, prec);
-  if (!(vol > 0) || vol * price < 10) {
-    log(`[SPOT] ${item.coin}: amount $${(vol * price).toFixed(2)} is below Bitunix's $10 minimum, cannot sell yet.`, 'WARNING');
+  const r = await spotRules(sym);
+  const vol = BN.roundDownToStep(qty, r.stepSize);
+  if (!(vol > 0) || vol < r.minQty || vol * price < r.minNotional) {
+    if ((spotSellRetryAt[item.coin] || 0) < Date.now()) log(`[SPOT] ${item.coin}: $${(vol * price).toFixed(2)} is below the exchange minimum ($${r.minNotional}), cannot sell yet.`, 'WARNING');
     spotSellRetryAt[item.coin] = Date.now() + 30 * 60 * 1000;
     return false;
   }
-  const res = await spotOrder(sym, 1, vol);
-  if (!(res && (res.code === 0 || res.code === '0'))) {
+  const res = await placeSpot(sym, 'SELL', { qty: vol, price });
+  if (!res.ok) {
     spotSellRetryAt[item.coin] = Date.now() + 5 * 60 * 1000;
-    log(`[SPOT SELL FAILED] ${item.coin}: ${res ? `${res.code} ${res.msg}` : 'no response'}. Retrying in 5 minutes.`, 'ERROR');
+    log(`[SPOT SELL FAILED] ${item.coin}: ${res.msg}. Retrying in 5 minutes.`, 'ERROR');
     return false;
   }
   const rec = spotHoldings[item.coin] || {};
-  const fill = await spotFill(sym, res.data && res.data.orderId);
-  const sellPrice = fill ? fill.price : price;
+  const sellPrice = res.fill ? res.fill.price : price;
   const buyPrice = parseFloat(rec.buyPrice || 0);
   const fee = parseFloat(config.spot_fee_pct ?? 0.1) / 100;
   const pnl = buyPrice > 0 ? (sellPrice - buyPrice) * vol - (sellPrice + buyPrice) * vol * fee : 0;
@@ -976,15 +1046,16 @@ async function sellSpot(item, sym, price, qty, why, netPct) {
   saveSpotHoldings();
   if (why === 'stop') spotCoolUntil[item.coin] = Date.now() + 30 * 60 * 1000;
   const label = why === 'stop' ? 'Stop loss' : why === 'protect' ? 'Profit protected' : why === 'target' ? 'Target reached' : 'Profit taken';
-  log(`[SPOT SELL] ${label}: sold ${vol} ${item.coin} @ ~$${Number(sellPrice.toPrecision(6))} (${netPct >= 0 ? '+' : ''}${netPct.toFixed(2)}% after fees, ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(3)})`, why === 'stop' ? 'WARNING' : 'SUCCESS');
-  sendTelegramAlert(`${why === 'stop' ? '🛑' : '💰'} *Spot ${label}* ${item.coin}\nSold ${vol} @ ~$${sellPrice}\nResult: ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(3)} (${netPct.toFixed(2)}% after fees)`);
+  const tag = isLive() ? '' : ' (paper)';
+  log(`[SPOT SELL] ${label}${tag}: sold ${vol} ${item.coin} @ ~$${Number(sellPrice.toPrecision(6))} (${netPct >= 0 ? '+' : ''}${netPct.toFixed(2)}% after fees, ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(3)})`, why === 'stop' ? 'WARNING' : 'SUCCESS');
+  sendTelegramAlert(`${why === 'stop' ? '🛑' : '💰'} *Spot ${label}${tag}* ${item.coin}\nSold ${vol} @ ~$${Number(sellPrice.toPrecision(6))}\nResult: ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(3)} (${netPct.toFixed(2)}% after fees)`);
   return true;
 }
 
 async function spotTick() {
   try {
-    const sAcc = await bitunixRequest('GET', '/api/spot/v1/user/account', null, null, true, true);
-    if (!sAcc || !(sAcc.code === 0 || sAcc.code === '0') || !Array.isArray(sAcc.data)) return;
+    const sAcc = await getSpotAccount();
+    if (!sAcc || !sAcc.ok || !Array.isArray(sAcc.data)) return;
     spotBalance = sAcc.data;
 
     const today = tradingDay();
@@ -1034,10 +1105,11 @@ async function spotTick() {
     if (botCount >= parseInt(config.spot_max_positions || 3)) return;
 
     const usdt = balOf('USDT');
+    const minOrder = EXCHANGE === 'binance' ? 5.5 : 10.2;
     const amount = Math.min(parseFloat(config.spot_order_usdt || 11), usdt * 0.98);
-    if (amount < 10.2) {
+    if (amount < minOrder) {
       const wanted = Object.values(multiCoinScanner).some(c => c.signal === 'BUY');
-      if (wanted && scanTickCount % 60 === 0) log(`[SPOT] Buy signal, but only $${usdt.toFixed(2)} USDT free in spot (Bitunix minimum order is $10).`, 'WARNING');
+      if (wanted && scanTickCount % 60 === 0) log(`[SPOT] Buy signal, but only $${usdt.toFixed(2)} USDT free in spot (below the exchange minimum order).`, 'WARNING');
       return;
     }
 
@@ -1054,23 +1126,23 @@ async function spotTick() {
     const c = agreed[0];
     const sym = `${c.name}USDT`;
     log(`[SPOT BUY] ${c.name}: ${c.reason}. Buying $${amount.toFixed(2)} @ ~$${Number(c.price.toPrecision(6))}`, 'INFO');
-    const res = await spotOrder(sym, 2, amount.toFixed(2));
+    const res = await placeSpot(sym, 'BUY', { quote: amount, price: c.price });
     lastSpotBuyAt = Date.now();
-    if (!(res && (res.code === 0 || res.code === '0'))) {
+    if (!res.ok) {
       spotCoolUntil[c.name] = Date.now() + 10 * 60 * 1000;
-      log(`[SPOT BUY FAILED] ${c.name}: ${res ? `${res.code} ${res.msg}` : 'no response'}`, 'ERROR');
-      health.lastOrderError = { at: new Date().toISOString(), code: res ? res.code : null, msg: res ? String(res.msg).slice(0, 120) : 'no response' };
+      log(`[SPOT BUY FAILED] ${c.name}: ${res.msg}`, 'ERROR');
+      health.lastOrderError = { at: new Date().toISOString(), msg: String(res.msg).slice(0, 120) };
       return;
     }
-    const fill = await spotFill(sym, res.data && res.data.orderId);
+    const fill = res.fill;
     const buyPrice = fill ? fill.price : c.price;
-    const qty = fill ? fill.qty * (1 - fee) : (amount / c.price) * (1 - fee); // fee may be taken in the coin
+    const qty = fill ? fill.qty : (amount / c.price) * (1 - fee);
     spotHoldings[c.name] = { source: 'bot', buyPrice, qty, peakPct: -fee * 200, buyTime: Date.now() };
     saveSpotHoldings();
     health.lastOrderAt = new Date().toISOString();
     health.lastOrderError = null;
-    log(`[SPOT BUY] Order Placed: BUY ${qty.toFixed(6)} ${c.name} @ ~$${Number(buyPrice.toPrecision(6))} ($${amount.toFixed(2)})`, 'SUCCESS');
-    sendTelegramAlert(`🟢 *Spot buy* ${c.name}\n$${amount.toFixed(2)} @ ~$${buyPrice}\nWhy: ${c.reason}\nMHD Trade site: ${siteScores[sym] ? siteScores[sym].label + ' (' + siteScores[sym].score + ')' : '-'}\nStop: $${(buyPrice * (1 - parseFloat(config.spot_stop_pct ?? 3) / 100)).toPrecision(6)}`);
+    log(`[SPOT BUY] Order Placed${isLive() ? '' : ' (paper)'}: BUY ${qty.toFixed(6)} ${c.name} @ ~$${Number(buyPrice.toPrecision(6))} ($${amount.toFixed(2)})`, 'SUCCESS');
+    sendTelegramAlert(`🟢 *Spot buy${isLive() ? '' : ' (paper)'}* ${c.name}\n$${amount.toFixed(2)} @ ~$${buyPrice}\nWhy: ${c.reason}\nMHD Trade site: ${siteScores[sym] ? siteScores[sym].label + ' (' + siteScores[sym].score + ')' : '-'}\nStop: $${(buyPrice * (1 - parseFloat(config.spot_stop_pct ?? 3) / 100)).toPrecision(6)}`);
   } catch (err) {
     log(`[SPOT] ${err.message}`, 'ERROR');
   }
@@ -1111,12 +1183,14 @@ app.get('/health', (req, res) => {
     last_start_stop: lastControl,
     trading_copy: isLeader,
     paused_for_today: guardReason,
-    futures_trading: config.futures_trading === true,
+    exchange: EXCHANGE,
+    live_trading: isLive(),
+    futures_trading: EXCHANGE !== 'binance' && config.futures_trading === true,
     spot_trading: config.spot_trading !== false,
     spot_bot_positions: Object.values(spotHoldings).filter(r => r.source === 'bot').length,
     spot_usdt_enough_for_a_buy: spotBalance ? (parseFloat((spotBalance.find(c => c.coin === 'USDT') || {}).balance || 0) * 0.98 >= 10.2) : null,
     spot_buys_possible_now: spotBalance ? Math.max(0, Math.floor(parseFloat((spotBalance.find(c => c.coin === 'USDT') || {}).balance || 0) * 0.98 / parseFloat(config.spot_order_usdt || 11))) : null,
-    keys_set: !!(config.api_key && config.secret_key),
+    keys_set: EXCHANGE === 'binance' ? !!(BINANCE_KEY && BINANCE_SECRET) : !!(config.api_key && config.secret_key),
     exchange_api_ok: health.apiOk,
     started_at: health.startedAt,
     last_scan_at: health.lastTickAt,
@@ -1218,7 +1292,7 @@ app.get('/.well-known/mcp/server-card.json', (req, res) => {
 app.get('/api/status', async (req, res) => {
   let liveBal = null;
   let livePositions = [];
-  try {
+  if (EXCHANGE !== 'binance') try {
     const acc = await bitunixRequest('GET', '/api/v1/futures/account', { marginCoin: 'USDT' }, null, true);
     if (acc && acc.code === 0) {
       liveBal = acc.data;
@@ -1247,7 +1321,7 @@ app.get('/api/status', async (req, res) => {
     spot_balance: spotBalance,
     spot_holdings: spotSummary(),
     spot_today: { realized: spotRealizedToday, max_loss: parseFloat(config.max_daily_loss_usd || 1.5) },
-    mode: { futures: config.futures_trading === true, spot: config.spot_trading !== false },
+    mode: { futures: EXCHANGE !== 'binance' && config.futures_trading === true, spot: config.spot_trading !== false, exchange: EXCHANGE, live: isLive(), paper_start: paper ? paper.start : null, paper_started_at: paper ? paper.startedAt : null },
     live_positions: livePositions,
     total_realized_today: dailyPnl,
     daily_guard: {
