@@ -1078,11 +1078,32 @@ async function spotTick() {
 
 // Public health check: no balances, keys or amounts. Lets the owner (or support) see why no trade is happening.
 const health = { startedAt: new Date().toISOString(), lastTickAt: null, lastOrderAt: null, lastOrderError: null, apiOk: null };
+// Can this server reach Binance? Binance refuses API calls from some countries'
+// servers (HTTP 451/403), so this is checked from the host before moving the bot there.
+let binanceCheck = null;
+async function checkBinance() {
+  const out = { at: new Date().toISOString() };
+  for (const [name, url] of [['api.binance.com', 'https://api.binance.com/api/v3/ping'], ['api-gcp.binance.com', 'https://api-gcp.binance.com/api/v3/ping']]) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      out[name] = r.status;
+    } catch (e) { out[name] = 'error: ' + String(e.message).slice(0, 60); }
+  }
+  try {
+    const r = await fetch('https://api.binance.com/api/v3/time', { signal: AbortSignal.timeout(10000) });
+    out.time_status = r.status;
+  } catch (e) { out.time_status = 'error'; }
+  binanceCheck = out;
+}
+setTimeout(() => { checkBinance().catch(() => {}); }, 3000);
+setInterval(() => { checkBinance().catch(() => {}); }, 30 * 60 * 1000);
+
 app.get('/health', (req, res) => {
   const signals = {};
   for (const [sym, c] of Object.entries(multiCoinScanner)) signals[sym] = { signal: c.signal, trend: c.trend, reason: c.reason, site: c.site_label ? `${c.site_label} (${c.site_score})` : null };
   res.json({
     running: readRunning(),
+    binance_from_server: binanceCheck,
     last_start_stop: lastControl,
     trading_copy: isLeader,
     paused_for_today: guardReason,
