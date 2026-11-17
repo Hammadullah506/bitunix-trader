@@ -185,6 +185,11 @@
         </div>
       </div>
 
+      <section id="dca-section" hidden>
+        <h2><span id="dca-title">Dip buying</span> <span class="muted num" style="font-weight:400" id="dca-sub"></span></h2>
+        <div class="body" id="dca-body"></div>
+      </section>
+
       <section>
         <h2><span id="trades-title">Open trades</span>
           <span class="row">
@@ -437,6 +442,31 @@
         const sig = c.signal === 'BUY' ? '<span class="tag buy">Buy</span>' : c.signal === 'SELL' ? '<span class="tag sell">Sell</span>' : '<span class="muted">Wait</span>';
         return `<tr><td><strong>${esc(c.name)}</strong></td><td class="r num">${price(c.price)}</td><td class="r num">${num(c.rsi).toFixed(1)}</td><td>${tr}</td><td>${c.site_label ? `<span class="${num(c.site_score) >= 25 ? 'up' : num(c.site_score) <= -25 ? 'down' : 'muted'}">${esc(c.site_label)}</span>` : '<span class="muted">–</span>'}</td><td>${sig}</td><td class="wrapcell">${esc(c.reason)}</td></tr>`;
       }).join('') : '<tr><td colspan="7" class="muted">Waiting for market data…</td></tr>';
+
+      // DCA (dip buying with averaging down)
+      const dv = d.dca;
+      $('dca-section').hidden = !dv || !dv.enabled;
+      if (dv && dv.enabled) {
+        const p = (n) => n == null ? '–' : price(n);
+        const tag = d.mode && d.mode.live ? '' : ' · paper';
+        $('dca-title').textContent = dv.coin + ' dip buying';
+        $('dca-sub').textContent = `${dv.cycles} round${dv.cycles === 1 ? '' : 's'} done · ${signed(dv.realized)}${tag}`;
+        const st = dv.settings;
+        const rule = `<div class="muted" style="font-size:13px;margin-top:10px">Rules: first buy $${num(st.base_usdt).toFixed(2)} when the price is ${st.dip_pct}% below the 24h high · each next buy ${st.mult}× bigger, ${st.step_pct}% lower · up to ${st.max_buys} buys · sell everything at +${st.tp_pct}% over the average, after fees · no stop loss.</div>`;
+        if (dv.round) {
+          const r = dv.round;
+          const chg = r.value_now != null ? r.value_now - r.spent : null;
+          $('dca-body').innerHTML = `<div class="pos"><div class="grow">
+              <strong>${r.buys} of ${st.max_buys} buys</strong> · ${usd(r.spent)} in · average <b>${p(r.avg_price)}</b>
+              <div class="muted num" style="font-size:13px">Now ${p(dv.price)} · sells all at <b class="up">${p(r.sell_at)}</b>${r.next_buy_at ? ` · next buy ${usd(r.next_buy_usdt)} at <b>${p(r.next_buy_at)}</b>` : ' · no more buys this round, waiting for the price to come back'}</div>
+            </div>
+            <div style="text-align:right"><div class="pl num ${cls(chg)}">${chg == null ? '–' : signed(chg, 2)}</div><div class="muted" style="font-size:12px">if sold now</div></div></div>` + rule;
+        } else {
+          const gap = dv.price && dv.first_buy_at ? (dv.price / dv.first_buy_at - 1) * 100 : null;
+          $('dca-body').innerHTML = `<div class="pos"><div class="grow"><strong>Waiting for a dip</strong>
+              <div class="muted num" style="font-size:13px">Now ${p(dv.price)} · 24h high ${p(dv.high24)} · first buy at <b>${p(dv.first_buy_at)}</b>${gap != null ? ` (${gap.toFixed(1)}% lower than now)` : ''}</div></div></div>` + rule;
+        }
+      }
 
       // real Binance wallet
       const rw = d.real_wallet;

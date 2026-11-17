@@ -142,7 +142,7 @@ function loadConfig() {
     stop_loss_margin_pct: 30.0,   // give a trade room: cut a loser only at this % of margin
     min_confidence: 85,           // skip the weakest signals (plain EMA-cross state)
     futures_trading: false,       // open new futures trades? (open ones are still managed)
-    spot_trading: true,           // buy and sell spot coins on signals
+    spot_trading: false,          // buy and sell spot coins on signals (off while DCA uses the money)
     spot_order_usdt: 11,          // USDT per spot buy (Bitunix minimum is 10)
     spot_max_positions: 3,        // at most this many coins bought by the bot at once
     spot_fee_pct: 0.1,            // spot fee per side, %
@@ -154,7 +154,15 @@ function loadConfig() {
     spot_site_min_score: 25,      // MHD Trade site score needed to buy (25 = Buy, 60 = Strong Buy)
     live_trading: false,          // false = paper mode: real prices and decisions, no real orders
     hourly_report: true,          // Telegram summary of all signals every hour
-    strategy_version: 5,
+    dca_enabled: true,            // dip-buying with averaging down on one coin (see dca.js)
+    dca_symbol: 'ENAUSDT',
+    dca_dip_pct: 8,               // first buy: this % below the last 24h high
+    dca_step_pct: 5,              // next buy: this % below the previous buy
+    dca_mult: 1.5,                // each next buy is this many times bigger
+    dca_max_buys: 3,              // 6.5 + 9.75 + 14.63 = $30.9 at most
+    dca_base_usdt: 6.5,
+    dca_tp_pct: 1.5,              // sell all at this % above the average cost, after fees
+    strategy_version: 6,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
@@ -167,7 +175,8 @@ function loadConfig() {
         for (const k of ['take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
           'stop_loss_margin_pct', 'min_confidence', 'spot_tp_pct', 'futures_trading', 'spot_trading', 'spot_order_usdt',
           'spot_max_positions', 'spot_trail_start_pct', 'spot_trail_drop_pct', 'spot_protect_arm_pct', 'spot_protect_floor_pct',
-          'spot_stop_pct', 'strategy_version']) cfg[k] = defaultCfg[k];
+          'spot_stop_pct', 'dca_enabled', 'dca_symbol', 'dca_dip_pct', 'dca_step_pct', 'dca_mult', 'dca_max_buys',
+          'dca_base_usdt', 'dca_tp_pct', 'strategy_version']) cfg[k] = defaultCfg[k];
       }
     } catch (e) {
       console.error("Config read error:", e);
@@ -196,6 +205,7 @@ function secretsFromEnv() {
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
   'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct', 'live_trading', 'hourly_report',
+  'dca_enabled', 'dca_dip_pct', 'dca_step_pct', 'dca_tp_pct',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
   'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
@@ -1025,7 +1035,7 @@ async function getSpotAccount() {
 // Exchange order rules for a coin
 async function spotRules(sym) {
   if (EXCHANGE === 'binance') {
-    try { const r = await BN.rules(Object.keys(COIN_CONFIGS)); if (r[sym]) return r[sym]; } catch (e) {}
+    try { const r = await BN.rules([...new Set([...Object.keys(COIN_CONFIGS), (config.dca_symbol || 'ENAUSDT').toUpperCase()])]); if (r[sym]) return r[sym]; } catch (e) {}
     return { stepSize: Math.pow(10, -(SPOT_BASE_PRECISION[sym.replace('USDT', '')] ?? 4)), minNotional: 5, minQty: 0 };
   }
   return { stepSize: Math.pow(10, -(SPOT_BASE_PRECISION[sym.replace('USDT', '')] ?? 4)), minNotional: 10, minQty: 0 };
@@ -1062,6 +1072,12 @@ async function placeSpot(sym, side, { quote, qty, price }) {
   return { ok: true, fill: null };
 }
 
+const DCA_PATH = path.join(STATE_DIR, '.bitunix-trader-dca.json');
+const dca = require('./dca.js').createDca({
+  path: DCA_PATH, getConfig: () => config, BN, placeSpot, spotRules,
+  log, alert: (t) => sendTelegramAlert(t), isLive, health: { set lastOrderAt(v) { health.lastOrderAt = v; }, set lastOrderError(v) { health.lastOrderError = v; } }
+});
+
 async function sellSpot(item, sym, price, qty, why, netPct) {
   const r = await spotRules(sym);
   const vol = BN.roundDownToStep(qty, r.stepSize);
@@ -1097,6 +1113,7 @@ async function spotTick() {
     const sAcc = await getSpotAccount();
     if (!sAcc || !sAcc.ok || !Array.isArray(sAcc.data)) return;
     spotBalance = sAcc.data;
+    if (EXCHANGE === 'binance') await dca.tick(sAcc.data, isRunning);
 
     const today = tradingDay();
     if (spotDay !== today) { spotDay = today; spotRealizedToday = 0; }
@@ -1237,6 +1254,7 @@ function buildHealth() {
     last_order_at: health.lastOrderAt,
     last_order_error: health.lastOrderError,
     open_positions: lastPositionCount,
+    dca: EXCHANGE === 'binance' ? (() => { const v = dca.view(); return { enabled: v.enabled, coin: v.coin, buys_in_round: v.round ? v.round.buys : 0, rounds_done: v.cycles }; })() : null,
     signals
   };
 }
@@ -1298,9 +1316,17 @@ async function hourlyReport() {
     if (!isLive() && paper) wallet = `\nPaper wallet: $${total.toFixed(2)} (${total - paper.start >= 0 ? '+' : '-'}$${Math.abs(total - paper.start).toFixed(2)} since start)`;
     else wallet = `\nSpot wallet: $${total.toFixed(2)}`;
   }
+  let dcaLine = '';
+  if (EXCHANGE === 'binance') {
+    const v = dca.view();
+    const p = (n) => n == null ? '-' : '$' + Number(n.toPrecision(5));
+    if (v.enabled) dcaLine = v.round
+      ? `*${v.coin} DCA:* ${v.round.buys} buy(s), average ${p(v.round.avg_price)}, now ${p(v.price)}, sells all at ${p(v.round.sell_at)}${v.round.next_buy_at ? `, next buy at ${p(v.round.next_buy_at)}` : ''}\nRounds done: ${v.cycles}, profit ${v.realized >= 0 ? '+' : '-'}$${Math.abs(v.realized).toFixed(2)}\n\n`
+      : `*${v.coin} DCA:* waiting. Now ${p(v.price)}, first buy at ${p(v.first_buy_at)} (24h high ${p(v.high24)} −${v.settings.dip_pct}%)\nRounds done: ${v.cycles}, profit ${v.realized >= 0 ? '+' : '-'}$${Math.abs(v.realized).toFixed(2)}\n\n`;
+  }
   const held = Object.entries(spotHoldings).filter(([, r]) => r.source === 'bot').map(([c]) => c);
   const state = !readRunning() ? '⏸ Bot is STOPPED' : isLive() ? '✅ Live trading' : '📝 Paper mode';
-  sendTelegramAlert(`🕐 *Hourly signals* — ${state}\n\n${lines.join('\n')}${wallet}\nBot coins held: ${held.length ? held.join(', ') : 'none'}\nToday: ${spotRealizedToday >= 0 ? '+' : '-'}$${Math.abs(spotRealizedToday).toFixed(2)}`);
+  sendTelegramAlert(`🕐 *Hourly signals* — ${state}\n\n${dcaLine}${lines.join('\n')}${wallet}\nBot coins held: ${held.length ? held.join(', ') : 'none'}\nToday: ${spotRealizedToday >= 0 ? '+' : '-'}$${Math.abs(spotRealizedToday).toFixed(2)}`);
 }
 
 async function masterTick() {
@@ -1431,6 +1457,7 @@ function buildStatus(liveBal, livePositions) {
     spot_balance: spotBalance,
     spot_holdings: spotSummary(),
     real_wallet: EXCHANGE === 'binance' ? realWallet : null,
+    dca: EXCHANGE === 'binance' ? dca.view() : null,
     spot_today: { realized: spotRealizedToday, max_loss: parseFloat(config.max_daily_loss_usd || 1.5) },
     mode: { futures: EXCHANGE !== 'binance' && config.futures_trading === true, spot: config.spot_trading !== false, exchange: EXCHANGE, live: isLive(), paper_start: paper ? paper.start : null, paper_started_at: paper ? paper.startedAt : null },
     live_positions: livePositions,
