@@ -151,6 +151,7 @@ function loadConfig() {
     spot_protect_arm_pct: 1,      // once profit reached this...
     spot_protect_floor_pct: 0.3,  // ...sell before it drops below this
     spot_stop_pct: 3,             // sell a losing coin at this % below the buy price
+    spot_site_min_score: 25,      // MHD Trade site score needed to buy (25 = Buy, 60 = Strong Buy)
     strategy_version: 5,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
@@ -848,6 +849,29 @@ function exchangeStopPct() {
 }
 
 // 1-hour trend for a coin: +1 up, -1 down, 0 flat/unknown. Trades are only taken with it.
+// Score from the MHD Trade signals site (signals.malikhammaddigital.com), same engine file.
+// +25 or more = the site shows Buy, +60 = Strong Buy. Refreshed every 5 minutes per coin.
+require('./signal-engine.js');
+const TA = globalThis.TA;
+const siteScores = {}; // sym -> { at, score, label }
+async function refreshSiteScore(sym) {
+  const cached = siteScores[sym];
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached;
+  const rows = {};
+  let end = Date.now();
+  for (let page = 0; page < 2; page++) {
+    const res = await bitunixRequest('GET', '/api/v1/futures/market/kline', { symbol: sym, interval: '1h', limit: 200, endTime: end });
+    if (!res || res.code !== 0 || !Array.isArray(res.data) || !res.data.length) break;
+    for (const c of res.data) rows[c.time] = { time: parseInt(c.time), open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.baseVol || 0) };
+    end = Math.min(...res.data.map(c => parseInt(c.time))) - 1;
+  }
+  const candles = Object.values(rows).sort((a, b) => a.time - b.time).slice(0, -1); // closed candles only
+  if (candles.length < 210) return cached || null;
+  const a = TA.analyze(candles);
+  siteScores[sym] = { at: Date.now(), score: a.score, label: a.label };
+  return siteScores[sym];
+}
+
 const hourlyCache = {};
 async function hourlyTrend(sym, price) {
   const cached = hourlyCache[sym];
@@ -1008,8 +1032,14 @@ async function spotTick() {
     const picks = Object.values(multiCoinScanner)
       .filter(c => c.signal === 'BUY' && SPOT_COINS.includes(c.name) && !spotHoldings[c.name] && (spotCoolUntil[c.name] || 0) <= Date.now())
       .sort((a, b) => b.confidence - a.confidence);
-    if (!picks.length) return;
-    const c = picks[0];
+    // The MHD Trade site must agree (Buy or Strong Buy) before the bot spends money
+    const minSite = parseFloat(config.spot_site_min_score ?? 25);
+    const agreed = picks.filter(c => siteScores[`${c.name}USDT`] && siteScores[`${c.name}USDT`].score >= minSite);
+    if (picks.length && !agreed.length && scanTickCount % 24 === 0) {
+      log(`[SPOT] Buy signal on ${picks.map(c => c.name).join(', ')}, but the MHD Trade site does not agree (${picks.map(c => `${c.name} ${siteScores[`${c.name}USDT`] ? siteScores[`${c.name}USDT`].score : '?'}`).join(', ')}). Waiting.`, 'INFO');
+    }
+    if (!agreed.length) return;
+    const c = agreed[0];
     const sym = `${c.name}USDT`;
     log(`[SPOT BUY] ${c.name}: ${c.reason}. Buying $${amount.toFixed(2)} @ ~$${Number(c.price.toPrecision(6))}`, 'INFO');
     const res = await spotOrder(sym, 2, amount.toFixed(2));
@@ -1028,7 +1058,7 @@ async function spotTick() {
     health.lastOrderAt = new Date().toISOString();
     health.lastOrderError = null;
     log(`[SPOT BUY] Order Placed: BUY ${qty.toFixed(6)} ${c.name} @ ~$${Number(buyPrice.toPrecision(6))} ($${amount.toFixed(2)})`, 'SUCCESS');
-    sendTelegramAlert(`🟢 *Spot buy* ${c.name}\n$${amount.toFixed(2)} @ ~$${buyPrice}\nWhy: ${c.reason}\nStop: $${(buyPrice * (1 - parseFloat(config.spot_stop_pct ?? 3) / 100)).toPrecision(6)}`);
+    sendTelegramAlert(`🟢 *Spot buy* ${c.name}\n$${amount.toFixed(2)} @ ~$${buyPrice}\nWhy: ${c.reason}\nMHD Trade site: ${siteScores[sym] ? siteScores[sym].label + ' (' + siteScores[sym].score + ')' : '-'}\nStop: $${(buyPrice * (1 - parseFloat(config.spot_stop_pct ?? 3) / 100)).toPrecision(6)}`);
   } catch (err) {
     log(`[SPOT] ${err.message}`, 'ERROR');
   }
@@ -1038,7 +1068,7 @@ async function spotTick() {
 const health = { startedAt: new Date().toISOString(), lastTickAt: null, lastOrderAt: null, lastOrderError: null, apiOk: null };
 app.get('/health', (req, res) => {
   const signals = {};
-  for (const [sym, c] of Object.entries(multiCoinScanner)) signals[sym] = { signal: c.signal, trend: c.trend, reason: c.reason };
+  for (const [sym, c] of Object.entries(multiCoinScanner)) signals[sym] = { signal: c.signal, trend: c.trend, reason: c.reason, site: c.site_label ? `${c.site_label} (${c.site_score})` : null };
   res.json({
     running: readRunning(),
     trading_copy: isLeader,
@@ -1058,11 +1088,19 @@ app.get('/health', (req, res) => {
 });
 let lastPositionCount = null;
 
+let lastSiteRefresh = 0;
 async function masterTick() {
   isRunning = readRunning();
   if (!claimLeadership()) return; // another copy of the app is doing the trading
   await futuresTick();
   health.lastTickAt = new Date().toISOString();
+  if (Date.now() - lastSiteRefresh > 60 * 1000) { // one coin per minute keeps the API load tiny
+    lastSiteRefresh = Date.now();
+    const syms = Object.keys(COIN_CONFIGS);
+    const stale = syms.find(sym => !siteScores[sym] || Date.now() - siteScores[sym].at >= 5 * 60 * 1000);
+    if (stale) { try { await refreshSiteScore(stale); } catch (e) {} }
+  }
+  for (const [sym, sc] of Object.entries(siteScores)) if (multiCoinScanner[sym]) { multiCoinScanner[sym].site_score = sc.score; multiCoinScanner[sym].site_label = sc.label; }
   await spotTick();
 }
 

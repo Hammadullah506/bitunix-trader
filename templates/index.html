@@ -212,7 +212,7 @@
         <h2>Markets</h2>
         <div class="scroll">
           <table>
-            <thead><tr><th>Coin</th><th class="r">Price</th><th class="r">RSI</th><th>1h trend</th><th>Signal</th><th>Why</th></tr></thead>
+            <thead><tr><th>Coin</th><th class="r">Price</th><th class="r">RSI</th><th>1h trend</th><th>MHD site</th><th>Signal</th><th>Why</th></tr></thead>
             <tbody id="markets"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
           </table>
         </div>
@@ -414,8 +414,8 @@
       $('markets').innerHTML = coins.length ? coins.map(c => {
         const tr = c.trend === 1 ? '<span class="up">Up</span>' : c.trend === -1 ? '<span class="down">Down</span>' : '<span class="muted">Flat</span>';
         const sig = c.signal === 'BUY' ? '<span class="tag buy">Buy</span>' : c.signal === 'SELL' ? '<span class="tag sell">Sell</span>' : '<span class="muted">Wait</span>';
-        return `<tr><td><strong>${esc(c.name)}</strong></td><td class="r num">${price(c.price)}</td><td class="r num">${num(c.rsi).toFixed(1)}</td><td>${tr}</td><td>${sig}</td><td class="wrapcell">${esc(c.reason)}</td></tr>`;
-      }).join('') : '<tr><td colspan="6" class="muted">Waiting for market data…</td></tr>';
+        return `<tr><td><strong>${esc(c.name)}</strong></td><td class="r num">${price(c.price)}</td><td class="r num">${num(c.rsi).toFixed(1)}</td><td>${tr}</td><td>${c.site_label ? `<span class="${num(c.site_score) >= 25 ? 'up' : num(c.site_score) <= -25 ? 'down' : 'muted'}">${esc(c.site_label)}</span>` : '<span class="muted">–</span>'}</td><td>${sig}</td><td class="wrapcell">${esc(c.reason)}</td></tr>`;
+      }).join('') : '<tr><td colspan="7" class="muted">Waiting for market data…</td></tr>';
 
       // spot
       if (d.spot_today) $('spot-today').textContent = 'Today ' + signed(d.spot_today.realized, 2);
