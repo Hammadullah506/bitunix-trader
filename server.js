@@ -1093,6 +1093,10 @@ async function checkBinance() {
     const r = await fetch('https://api.binance.com/api/v3/time', { signal: AbortSignal.timeout(10000) });
     out.time_status = r.status;
   } catch (e) { out.time_status = 'error'; }
+  try {
+    const r = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(10000) });
+    out.server_ip = (await r.json()).ip; // the IP Binance sees: put this in the API key's IP restriction
+  } catch (e) { out.server_ip = 'unknown'; }
   binanceCheck = out;
 }
 setTimeout(() => { checkBinance().catch(() => {}); }, 3000);
