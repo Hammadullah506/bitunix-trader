@@ -186,7 +186,7 @@
       </div>
 
       <section>
-        <h2>Open trades
+        <h2><span id="trades-title">Open trades</span>
           <span class="row">
             <button class="small go" id="btn-buy">Buy BTC</button>
             <button class="small halt" id="btn-sell">Sell BTC</button>
@@ -219,7 +219,7 @@
       </section>
 
       <section>
-        <h2>Spot holdings</h2>
+        <h2>Spot holdings <span class="muted num" style="font-weight:400" id="spot-today"></span></h2>
         <div class="scroll">
           <table>
             <thead><tr><th>Coin</th><th class="r">Amount</th><th class="r">Value</th><th>Your buy price</th><th class="r">Profit</th><th>Plan</th></tr></thead>
@@ -366,7 +366,11 @@
         $('s-futures').textContent = usd(total);
         $('s-margin').textContent = num(bal.margin) > 0 ? usd(bal.margin) + ' in trades' : 'Nothing in trades';
       }
-      if (guard.start_equity != null) {
+      if (d.mode && !d.mode.futures && d.spot_today) {
+        $('s-today').textContent = signed(d.spot_today.realized);
+        $('s-today').className = 'value num ' + cls(d.spot_today.realized);
+        $('s-limits').textContent = 'Spot trades closed today · limit −$' + num(d.spot_today.max_loss).toFixed(2);
+      } else if (guard.start_equity != null) {
         $('s-today').textContent = signed(guard.pnl);
         $('s-today').className = 'value num ' + cls(guard.pnl);
         $('s-limits').textContent = 'Limit −$' + num(guard.max_daily_loss_usd).toFixed(2) + ' · Goal +$' + num(guard.daily_goal).toFixed(2);
@@ -382,6 +386,11 @@
         $('s-rsi').textContent = 'RSI ' + num(ind.current_rsi).toFixed(1);
       }
 
+      // futures controls only when futures trading is on
+      const futOn = !!(d.mode && d.mode.futures);
+      $('btn-buy').style.display = futOn ? '' : 'none'; $('btn-sell').style.display = futOn ? '' : 'none';
+      $('trades-title').textContent = futOn ? 'Open futures trades' : 'Futures (off: spot only)';
+
       // positions
       const fee = num(cfg.taker_fee_pct || 0.06) / 100;
       const positions = d.live_positions || [];
@@ -396,7 +405,7 @@
           <div><div class="pl num ${cls(net)}">${signed(net, 3)}</div><div class="muted num" style="font-size:12px">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}% after fees</div></div>
         </div>`;
       }).join('') + '<div class="row" style="margin-top:10px"><button class="small halt" id="btn-close">Close all trades</button></div>'
-        : '<div class="empty">No open trade.</div>';
+        : `<div class="empty">${futOn ? 'No open trade.' : 'Futures trading is off. The bot trades spot coins only; see Spot holdings below.'}</div>`;
       const closeBtn = $('btn-close');
       if (closeBtn) closeBtn.onclick = closeAll;
 
@@ -409,15 +418,17 @@
       }).join('') : '<tr><td colspan="6" class="muted">Waiting for market data…</td></tr>';
 
       // spot
+      if (d.spot_today) $('spot-today').textContent = 'Today ' + signed(d.spot_today.realized, 2);
       if (!editingBasis) {
         const coinsHeld = spot.filter(h => h.coin !== 'USDT');
         $('spot').innerHTML = coinsHeld.length ? coinsHeld.map(h => {
           const known = h.buy_price > 0;
           const profit = known ? `<span class="${cls(h.change_pct)}">${h.change_pct >= 0 ? '+' : '−'}${Math.abs(h.change_pct).toFixed(2)}%</span>` : '<span class="muted">–</span>';
           let plan = 'Not managed';
-          if (h.tradable) plan = known ? `Sell at +${num(h.target_pct)}% (${price(h.buy_price * (1 + num(h.target_pct) / 100))})` : 'Holding. Enter your buy price to set a sell target';
-          return `<tr><td><strong>${esc(h.coin)}</strong></td><td class="r num">${esc(h.balance)}</td><td class="r num">${h.price ? usd(h.value) : '–'}</td>
-            <td>${h.tradable ? `<span class="row" style="flex-wrap:nowrap"><input type="number" step="any" min="0" data-coin="${esc(h.coin)}" value="${known ? h.buy_price : ''}" placeholder="price"><button class="small" data-save="${esc(h.coin)}">Save</button></span>` : '<span class="muted">–</span>'}</td>
+          if (h.source === 'bot') plan = `Bought by the bot. Sells when profit turns down after +2%, or at the stop ${price(h.stop_price)}`;
+          else if (h.tradable) plan = known ? `Your coin. Sold only at +${num(h.target_pct)}% (${price(h.buy_price * (1 + num(h.target_pct) / 100))}), never at a loss` : 'Your coin. Enter your buy price to set a sell target';
+          return `<tr><td><strong>${esc(h.coin)}</strong></td><td class="r num">${esc(Number(num(h.balance).toPrecision(6)))}</td><td class="r num">${h.price ? usd(h.value) : '–'}</td>
+            <td>${h.source === 'bot' ? `<span class="num">${price(h.buy_price)}</span> <span class="tag buy">Bot</span>` : h.tradable ? `<span class="row" style="flex-wrap:nowrap"><input type="number" step="any" min="0" data-coin="${esc(h.coin)}" value="${known ? h.buy_price : ''}" placeholder="price"><button class="small" data-save="${esc(h.coin)}">Save</button></span>` : '<span class="muted">–</span>'}</td>
             <td class="r num">${profit}</td><td class="wrapcell">${esc(plan)}</td></tr>`;
         }).join('') : '<tr><td colspan="6" class="muted">No coins in the spot wallet.</td></tr>';
       }
@@ -516,9 +527,9 @@
         for (const l of logs.slice().reverse()) {
           if (seenLogs.has(keyOf(l))) continue;
           const m = l.message;
-          if (/Order Placed|\[MANUAL\]/.test(m)) notify(/ BUY /.test(m) ? 'buy' : 'sell', 'Trade opened: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
-          else if (/PROFIT LOCK|PROFIT PROTECT|\[SPOT\] Sold/.test(m)) notify('buy', 'Profit taken: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
-          else if (/STOP LOSS|DAILY GUARD\] Loss|ORDER FAILED/.test(m)) notify('sell', m.replace(/^\[[^\]]+\]\s*/, ''));
+          if (/Order Placed|\[MANUAL\]/.test(m)) notify(/ BUY /.test(m) ? 'buy' : 'sell', 'Bought: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
+          else if (/PROFIT LOCK|PROFIT PROTECT|\[SPOT SELL\] (Profit|Target)/.test(m)) notify('buy', 'Profit taken: ' + m.replace(/^\[[^\]]+\]\s*/, ''));
+          else if (/STOP LOSS|Stop loss|DAILY GUARD\] Loss|FAILED/.test(m)) notify('sell', m.replace(/^\[[^\]]+\]\s*/, ''));
         }
       }
       seenLogs = new Set(logs.map(keyOf));

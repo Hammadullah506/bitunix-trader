@@ -141,7 +141,17 @@ function loadConfig() {
     protect_floor_net_pct: 3.0,   // ...never let it fall below this: close and keep the gain
     stop_loss_margin_pct: 30.0,   // give a trade room: cut a loser only at this % of margin
     min_confidence: 85,           // skip the weakest signals (plain EMA-cross state)
-    strategy_version: 4,
+    futures_trading: false,       // open new futures trades? (open ones are still managed)
+    spot_trading: true,           // buy and sell spot coins on signals
+    spot_order_usdt: 11,          // USDT per spot buy (Bitunix minimum is 10)
+    spot_max_positions: 3,        // at most this many coins bought by the bot at once
+    spot_fee_pct: 0.1,            // spot fee per side, %
+    spot_trail_start_pct: 2,      // after fees: start trailing once profit reaches this
+    spot_trail_drop_pct: 0.7,     // then sell when profit falls this far from its best
+    spot_protect_arm_pct: 1,      // once profit reached this...
+    spot_protect_floor_pct: 0.3,  // ...sell before it drops below this
+    spot_stop_pct: 3,             // sell a losing coin at this % below the buy price
+    strategy_version: 5,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
@@ -152,7 +162,9 @@ function loadConfig() {
       // Settings saved by an older strategy version would undo the tested exit rules
       if (data.strategy_version !== defaultCfg.strategy_version) {
         for (const k of ['take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
-          'stop_loss_margin_pct', 'min_confidence', 'spot_tp_pct', 'strategy_version']) cfg[k] = defaultCfg[k];
+          'stop_loss_margin_pct', 'min_confidence', 'spot_tp_pct', 'futures_trading', 'spot_trading', 'spot_order_usdt',
+          'spot_max_positions', 'spot_trail_start_pct', 'spot_trail_drop_pct', 'spot_protect_arm_pct', 'spot_protect_floor_pct',
+          'spot_stop_pct', 'strategy_version']) cfg[k] = defaultCfg[k];
       }
     } catch (e) {
       console.error("Config read error:", e);
@@ -174,6 +186,7 @@ function secretsFromEnv() {
 
 // Settings the dashboard is allowed to change
 const EDITABLE_FIELDS = ['symbol', 'multi_coin_mode', 'spot_auto_mode', 'spot_tp_pct', 'interval', 'order_qty',
+  'futures_trading', 'spot_trading', 'spot_order_usdt', 'spot_max_positions', 'spot_stop_pct',
   'leverage', 'fixed_stop_loss_pct', 'daily_goal', 'max_concurrent_positions',
   'taker_fee_pct', 'take_profit_net_pct', 'trailing_drop_net_pct', 'protect_arm_net_pct', 'protect_floor_net_pct',
   'stop_loss_margin_pct', 'min_confidence', 'max_daily_loss_usd'];
@@ -397,7 +410,10 @@ let multiCoinScanner = {};
 let spotBalance = null;
 let spotHoldings = readJson(SPOT_PATH) || {}; // coin -> { buyPrice }, kept on disk so restarts do not lose it
 let spotSellRetryAt = {};
-const SPOT_COINS = ['BTC', 'ETH', 'SOL'];
+const SPOT_COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE'];
+const SPOT_BASE_PRECISION = { BTC: 5, ETH: 4, SOL: 3, XRP: 1, DOGE: 0 }; // from /api/spot/v1/common/coin_pair/list
+let spotDay = null, spotRealizedToday = 0, lastSpotBuyAt = 0, spotCoolUntil = {};
+function floorTo(x, decimals) { const f = Math.pow(10, decimals); return Math.floor(x * f + 1e-9) / f; }
 function saveSpotHoldings() {
   try { fs.writeFileSync(SPOT_PATH, JSON.stringify(spotHoldings), 'utf-8'); } catch (e) { console.error('Spot state save error:', e.message); }
 }
@@ -409,8 +425,12 @@ function spotSummary() {
     if (item.coin === 'USDT') return { coin: 'USDT', balance: item.balance, price: 1, value: balance, tradable: false };
     const scanner = multiCoinScanner[`${item.coin}USDT`];
     const price = scanner && scanner.price ? scanner.price : 0;
-    const buyPrice = spotHoldings[item.coin] ? parseFloat(spotHoldings[item.coin].buyPrice || 0) : 0;
+    const rec = spotHoldings[item.coin] || {};
+    const buyPrice = parseFloat(rec.buyPrice || 0);
     return {
+      source: rec.source === 'bot' ? 'bot' : (buyPrice > 0 ? 'manual' : 'unknown'),
+      bot_qty: rec.qty || null,
+      stop_price: rec.source === 'bot' ? buyPrice * (1 - parseFloat(config.spot_stop_pct || 3) / 100) : null,
       coin: item.coin,
       balance: item.balance,
       price: price,
@@ -753,7 +773,8 @@ async function futuresTick() {
   const currentActiveSymbols = new Set(activePositions.map(p => p.symbol));
 
   const entryCooldownOver = Date.now() - lastEntryAt >= 60 * 1000; // exchange needs a moment to list a new position
-  if (isRunning && !guardReason && entryCooldownOver && activePositions.length < maxActivePositions && candidates.length > 0) {
+  const futuresOn = config.futures_trading === true;
+  if (futuresOn && isRunning && !guardReason && entryCooldownOver && activePositions.length < maxActivePositions && candidates.length > 0) {
     for (const opp of candidates) {
       if (activePositions.length >= maxActivePositions) break;
       if (currentActiveSymbols.has(opp.symbol)) continue; // Never duplicate position on same coin
@@ -867,81 +888,147 @@ async function closeSpecificPosition(p) {
   }, true);
 }
 
-// Spot Autonomous Dip-Buyer & Seller Loop
-async function spotTick() {
-  if (!config.spot_auto_mode || !isRunning) return;
+// Spot trading. Buys only on a Buy signal that agrees with the 1-hour uptrend
+// (the same filtered signals the dashboard shows), sells on the exit rules below.
+// Coins the owner bought themselves are only sold at their own target, never at a loss.
+async function spotOrder(sym, side, volume) {
+  return bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
+    symbol: sym,
+    side: side,          // 1 = sell, 2 = buy
+    type: 2,             // market
+    volume: String(volume),
+    price: '0'
+  }, true, true);
+}
 
+// Average fill price and quantity of a spot order (null if the exchange does not say)
+async function spotFill(sym, orderId) {
+  if (!orderId) return null;
+  await new Promise(r => setTimeout(r, 1500));
+  const res = await bitunixRequest('POST', '/api/spot/v1/order/deal/list', null, { orderId: String(orderId), symbol: sym }, true, true);
+  const rows = res && (res.code === 0 || res.code === '0') ? (Array.isArray(res.data) ? res.data : res.data ? [res.data] : []) : [];
+  let qty = 0, quote = 0;
+  for (const r of rows) {
+    const v = parseFloat(r.volume || 0), pr = parseFloat(r.price || 0);
+    if (v > 0 && pr > 0) { qty += v; quote += v * pr; }
+  }
+  return qty > 0 ? { qty, price: quote / qty } : null;
+}
+
+async function sellSpot(item, sym, price, qty, why, netPct) {
+  const prec = SPOT_BASE_PRECISION[item.coin] ?? 4;
+  const vol = floorTo(qty, prec);
+  if (!(vol > 0) || vol * price < 10) {
+    log(`[SPOT] ${item.coin}: amount $${(vol * price).toFixed(2)} is below Bitunix's $10 minimum, cannot sell yet.`, 'WARNING');
+    spotSellRetryAt[item.coin] = Date.now() + 30 * 60 * 1000;
+    return false;
+  }
+  const res = await spotOrder(sym, 1, vol);
+  if (!(res && (res.code === 0 || res.code === '0'))) {
+    spotSellRetryAt[item.coin] = Date.now() + 5 * 60 * 1000;
+    log(`[SPOT SELL FAILED] ${item.coin}: ${res ? `${res.code} ${res.msg}` : 'no response'}. Retrying in 5 minutes.`, 'ERROR');
+    return false;
+  }
+  const rec = spotHoldings[item.coin] || {};
+  const fill = await spotFill(sym, res.data && res.data.orderId);
+  const sellPrice = fill ? fill.price : price;
+  const buyPrice = parseFloat(rec.buyPrice || 0);
+  const fee = parseFloat(config.spot_fee_pct ?? 0.1) / 100;
+  const pnl = buyPrice > 0 ? (sellPrice - buyPrice) * vol - (sellPrice + buyPrice) * vol * fee : 0;
+  if (rec.source === 'bot') spotRealizedToday += pnl;
+  delete spotHoldings[item.coin];
+  saveSpotHoldings();
+  if (why === 'stop') spotCoolUntil[item.coin] = Date.now() + 30 * 60 * 1000;
+  const label = why === 'stop' ? 'Stop loss' : why === 'protect' ? 'Profit protected' : why === 'target' ? 'Target reached' : 'Profit taken';
+  log(`[SPOT SELL] ${label}: sold ${vol} ${item.coin} @ ~$${Number(sellPrice.toPrecision(6))} (${netPct >= 0 ? '+' : ''}${netPct.toFixed(2)}% after fees, ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(3)})`, why === 'stop' ? 'WARNING' : 'SUCCESS');
+  sendTelegramAlert(`${why === 'stop' ? '🛑' : '💰'} *Spot ${label}* ${item.coin}\nSold ${vol} @ ~$${sellPrice}\nResult: ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl).toFixed(3)} (${netPct.toFixed(2)}% after fees)`);
+  return true;
+}
+
+async function spotTick() {
   try {
     const sAcc = await bitunixRequest('GET', '/api/spot/v1/user/account', null, null, true, true);
-    if (!sAcc || sAcc.code !== '0' || !Array.isArray(sAcc.data)) return;
+    if (!sAcc || !(sAcc.code === 0 || sAcc.code === '0') || !Array.isArray(sAcc.data)) return;
     spotBalance = sAcc.data;
 
-    const usdtCoin = sAcc.data.find(c => c.coin === 'USDT');
-    const usdtBal = usdtCoin ? parseFloat(usdtCoin.balance || 0) : 0;
+    const today = tradingDay();
+    if (spotDay !== today) { spotDay = today; spotRealizedToday = 0; }
+    const fee = parseFloat(config.spot_fee_pct ?? 0.1) / 100;
+    const balOf = (coin) => { const c = sAcc.data.find(x => x.coin === coin); return c ? parseFloat(c.balance || 0) : 0; };
 
-    if (usdtBal >= 5.0 && !guardReason) {
-      for (const sym of ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']) {
-        const scanner = multiCoinScanner[sym];
-        if (scanner && scanner.rsi && scanner.rsi <= 30) {
-          const buyAmount = "5";
-          const baseCoin = sym.replace('USDT', '');
-          log(`[SPOT AUTO-BUY] Extreme Dip on ${sym} (RSI: ${scanner.rsi})! Placing $${buyAmount} Spot Buy...`, 'INFO');
-
-          const spotOrder = await bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
-            symbol: sym,
-            side: 2,
-            type: 2,
-            volume: buyAmount
-          }, true, true);
-
-          if (spotOrder && (spotOrder.code === 0 || spotOrder.code === '0')) {
-            // Keep an honest average buy price. If older coins have no known price, leave it unknown.
-            const held = sAcc.data.find(c => c.coin === baseCoin);
-            const heldBal = held ? parseFloat(held.balance || 0) : 0;
-            const known = spotHoldings[baseCoin] ? parseFloat(spotHoldings[baseCoin].buyPrice || 0) : 0;
-            const boughtQty = parseFloat(buyAmount) / scanner.price;
-            if (heldBal * scanner.price < 0.5) spotHoldings[baseCoin] = { buyPrice: scanner.price, buyTime: Date.now() };
-            else if (known > 0) spotHoldings[baseCoin] = { buyPrice: (heldBal * known + parseFloat(buyAmount)) / (heldBal + boughtQty), buyTime: Date.now() };
-            saveSpotHoldings();
-            log(`[SPOT] Bought ${baseCoin} on Dip @ $${scanner.price}`, 'SUCCESS');
-            sendTelegramAlert(`🟢 *SPOT AUTO-DIP BUY EXECUTED!*\n\n• *Coin:* ${baseCoin}\n• *Bought Amount:* $${buyAmount} USDT\n• *Buy Price:* ~$${scanner.price}\n• *Reason:* Extreme Oversold Dip (RSI: ${scanner.rsi})\n• *Target:* Dynamic Profit Exit\n\n_Zero Liquidation Risk on Spot!_`);
-            break;
-          }
-        }
-      }
-    }
-
-    // Sell a held coin only when it is above its real buy price by the target.
-    // Without a known buy price the bot holds: it never guesses.
-    const targetPct = parseFloat(config.spot_tp_pct || 5);
+    // ---- 1. manage held coins ----
     for (const item of sAcc.data) {
-      if (!SPOT_COINS.includes(item.coin) || parseFloat(item.balance || 0) <= 0.0001) continue;
+      if (!SPOT_COINS.includes(item.coin)) continue;
+      const rec = spotHoldings[item.coin];
+      if (!rec || !(parseFloat(rec.buyPrice) > 0)) continue;
+      const bal = parseFloat(item.balance || 0);
       const sym = `${item.coin}USDT`;
       const scanner = multiCoinScanner[sym];
-      const basis = spotHoldings[item.coin] ? parseFloat(spotHoldings[item.coin].buyPrice || 0) : 0;
-      if (!scanner || !scanner.price || !(basis > 0)) continue;
+      if (!scanner || !scanner.price) continue;
+      if ((spotSellRetryAt[item.coin] || 0) > Date.now()) continue;
+      const price = scanner.price;
+      const buyPrice = parseFloat(rec.buyPrice);
+      const grossPct = (price / buyPrice - 1) * 100;
+      const netPct = grossPct - fee * 2 * 100;
 
-      const gainPct = ((scanner.price - basis) / basis) * 100;
-      if (gainPct < targetPct || (spotSellRetryAt[item.coin] || 0) > Date.now()) continue;
-
-      log(`[SPOT] ${item.coin} is +${gainPct.toFixed(2)}% above buy price $${basis}. Selling ${item.balance}.`, 'SUCCESS');
-      const sellRes = await bitunixRequest('POST', '/api/spot/v1/order/place_order', null, {
-        symbol: sym,
-        side: 1, // 1 = Sell
-        type: 2, // 2 = Market
-        volume: String(item.balance)
-      }, true, true);
-
-      if (sellRes && (sellRes.code === 0 || sellRes.code === '0')) {
-        delete spotHoldings[item.coin];
-        saveSpotHoldings();
-        log(`[SPOT] Sold ${item.balance} ${item.coin} @ ~$${scanner.price} (+${gainPct.toFixed(2)}%)`, 'SUCCESS');
-        sendTelegramAlert(`🎯 *Spot sold* ${item.coin}\nAmount: ${item.balance}\nPrice: ~$${scanner.price}\nProfit: +${gainPct.toFixed(2)}% over buy price $${basis}`);
-      } else {
-        spotSellRetryAt[item.coin] = Date.now() + 10 * 60 * 1000;
-        log(`[SPOT SELL FAILED] ${item.coin}: ${sellRes ? `${sellRes.code} ${sellRes.msg}` : 'no response'}. Retrying in 10 minutes.`, 'ERROR');
+      if (rec.source === 'bot') {
+        const qty = Math.min(parseFloat(rec.qty || bal), bal);
+        if (!(qty > 0)) { delete spotHoldings[item.coin]; saveSpotHoldings(); continue; } // sold by hand
+        if (!(rec.peakPct >= netPct)) { rec.peakPct = netPct; saveSpotHoldings(); }
+        let why = null;
+        if (grossPct <= -parseFloat(config.spot_stop_pct ?? 3)) why = 'stop';
+        else if (rec.peakPct >= parseFloat(config.spot_trail_start_pct ?? 2) && netPct <= rec.peakPct - parseFloat(config.spot_trail_drop_pct ?? 0.7)) why = 'trail';
+        else if (rec.peakPct < parseFloat(config.spot_trail_start_pct ?? 2) && rec.peakPct >= parseFloat(config.spot_protect_arm_pct ?? 1) && netPct <= parseFloat(config.spot_protect_floor_pct ?? 0.3)) why = 'protect';
+        if (why) await sellSpot(item, sym, price, qty, why, netPct);
+      } else if (isRunning && config.spot_auto_mode !== false && grossPct >= parseFloat(config.spot_tp_pct || 5)) {
+        // the owner's own coins: only at their target, never at a loss
+        await sellSpot(item, sym, price, bal, 'target', netPct);
       }
     }
+
+    // ---- 2. buy on signals ----
+    const maxLoss = parseFloat(config.max_daily_loss_usd || 1.5);
+    if (!isRunning || config.spot_trading === false) return;
+    if (spotRealizedToday <= -maxLoss) {
+      if (scanTickCount % 60 === 0) log(`[SPOT] Daily loss limit reached ($${spotRealizedToday.toFixed(2)}). No new buys today.`, 'WARNING');
+      return;
+    }
+    if (Date.now() - lastSpotBuyAt < 60 * 1000) return;
+    const botCount = Object.values(spotHoldings).filter(r => r.source === 'bot').length;
+    if (botCount >= parseInt(config.spot_max_positions || 3)) return;
+
+    const usdt = balOf('USDT');
+    const amount = Math.min(parseFloat(config.spot_order_usdt || 11), usdt * 0.98);
+    if (amount < 10.2) {
+      const wanted = Object.values(multiCoinScanner).some(c => c.signal === 'BUY');
+      if (wanted && scanTickCount % 60 === 0) log(`[SPOT] Buy signal, but only $${usdt.toFixed(2)} USDT free in spot (Bitunix minimum order is $10).`, 'WARNING');
+      return;
+    }
+
+    const picks = Object.values(multiCoinScanner)
+      .filter(c => c.signal === 'BUY' && SPOT_COINS.includes(c.name) && !spotHoldings[c.name] && (spotCoolUntil[c.name] || 0) <= Date.now())
+      .sort((a, b) => b.confidence - a.confidence);
+    if (!picks.length) return;
+    const c = picks[0];
+    const sym = `${c.name}USDT`;
+    log(`[SPOT BUY] ${c.name}: ${c.reason}. Buying $${amount.toFixed(2)} @ ~$${Number(c.price.toPrecision(6))}`, 'INFO');
+    const res = await spotOrder(sym, 2, amount.toFixed(2));
+    lastSpotBuyAt = Date.now();
+    if (!(res && (res.code === 0 || res.code === '0'))) {
+      spotCoolUntil[c.name] = Date.now() + 10 * 60 * 1000;
+      log(`[SPOT BUY FAILED] ${c.name}: ${res ? `${res.code} ${res.msg}` : 'no response'}`, 'ERROR');
+      health.lastOrderError = { at: new Date().toISOString(), code: res ? res.code : null, msg: res ? String(res.msg).slice(0, 120) : 'no response' };
+      return;
+    }
+    const fill = await spotFill(sym, res.data && res.data.orderId);
+    const buyPrice = fill ? fill.price : c.price;
+    const qty = fill ? fill.qty * (1 - fee) : (amount / c.price) * (1 - fee); // fee may be taken in the coin
+    spotHoldings[c.name] = { source: 'bot', buyPrice, qty, peakPct: -fee * 200, buyTime: Date.now() };
+    saveSpotHoldings();
+    health.lastOrderAt = new Date().toISOString();
+    health.lastOrderError = null;
+    log(`[SPOT BUY] Order Placed: BUY ${qty.toFixed(6)} ${c.name} @ ~$${Number(buyPrice.toPrecision(6))} ($${amount.toFixed(2)})`, 'SUCCESS');
+    sendTelegramAlert(`🟢 *Spot buy* ${c.name}\n$${amount.toFixed(2)} @ ~$${buyPrice}\nWhy: ${c.reason}\nStop: $${(buyPrice * (1 - parseFloat(config.spot_stop_pct ?? 3) / 100)).toPrecision(6)}`);
   } catch (err) {
     log(`[SPOT] ${err.message}`, 'ERROR');
   }
@@ -956,6 +1043,9 @@ app.get('/health', (req, res) => {
     running: readRunning(),
     trading_copy: isLeader,
     paused_for_today: guardReason,
+    futures_trading: config.futures_trading === true,
+    spot_trading: config.spot_trading !== false,
+    spot_bot_positions: Object.values(spotHoldings).filter(r => r.source === 'bot').length,
     keys_set: !!(config.api_key && config.secret_key),
     exchange_api_ok: health.apiOk,
     started_at: health.startedAt,
@@ -1078,6 +1168,8 @@ app.get('/api/status', async (req, res) => {
     live_balance: liveBal,
     spot_balance: spotBalance,
     spot_holdings: spotSummary(),
+    spot_today: { realized: spotRealizedToday, max_loss: parseFloat(config.max_daily_loss_usd || 1.5) },
+    mode: { futures: config.futures_trading === true, spot: config.spot_trading !== false },
     live_positions: livePositions,
     total_realized_today: dailyPnl,
     daily_guard: {
@@ -1142,7 +1234,7 @@ app.post('/api/spot_basis', (req, res) => {
   const price = parseFloat(req.body && req.body.price);
   if (!SPOT_COINS.includes(coin)) return res.json({ code: -1, msg: 'Unknown coin' });
   if (price > 0) {
-    spotHoldings[coin] = { buyPrice: price, buyTime: Date.now() };
+    spotHoldings[coin] = { source: 'manual', buyPrice: price, buyTime: Date.now() };
     log(`[SPOT] Buy price for ${coin} set to $${price}`, 'INFO');
   } else {
     delete spotHoldings[coin];
