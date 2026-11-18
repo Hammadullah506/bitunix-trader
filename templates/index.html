@@ -143,7 +143,7 @@
     <div class="wrap">
       <nav class="tabs" id="tabs">
         <a href="#overview" class="active">Overview</a>
-        <a href="#dca">ENA DCA</a>
+        <a href="#dca">DCA</a>
         <a href="#futures">Futures test</a>
         <a href="#markets">Markets</a>
         <a href="#wallet">Wallet</a>
@@ -163,7 +163,7 @@
           <div class="muted num" id="o-sub">&nbsp;</div>
         </div>
         <div class="cards">
-          <div class="card"><div class="label">ENA DCA profit</div><div class="value num" id="o-dca">–</div><div class="sub" id="o-dca-sub">&nbsp;</div></div>
+          <div class="card"><div class="label">DCA profit</div><div class="value num" id="o-dca">–</div><div class="sub" id="o-dca-sub">&nbsp;</div></div>
           <div class="card"><div class="label">Futures test (paper)</div><div class="value num" id="o-fut">–</div><div class="sub" id="o-fut-sub">&nbsp;</div></div>
           <div class="card"><div class="label">BTC</div><div class="value num" id="o-btc">–</div><div class="sub num" id="o-btc-sub">&nbsp;</div></div>
           <div class="card"><div class="label">Bot</div><div class="value" id="o-bot">–</div><div class="sub" id="o-bot-sub">&nbsp;</div></div>
@@ -171,7 +171,7 @@
       </section>
 
       <section id="dca">
-        <h2><span id="dca-title">ENA DCA</span> <small id="dca-sub"></small></h2>
+        <h2><span id="dca-title">DCA</span> <small id="dca-sub"></small></h2>
         <div id="dca-body"><div class="body muted">Loading…</div></div>
         <h2 style="border-top:1px solid var(--line)">Fast ENA test <small id="fast-sub">pretend money · compare with the live one</small></h2>
         <div id="fast-body"><div class="body muted">Loading…</div></div>
@@ -224,8 +224,8 @@
     <form id="settings-form">
       <div class="group">Money</div>
       <label><span>Real money (live trading)<small>Off = paper: real prices, pretend money</small></span><input type="checkbox" id="cfg-live"></label>
-      <div class="group">ENA DCA</div>
-      <label><span>Dip buying on ENA<small>Buy dips, average down, sell at profit</small></span><input type="checkbox" id="cfg-dca"></label>
+      <div class="group">DCA (dip buying)</div>
+      <label><span>Dip buying (DCA)<small>Buy dips, average down, sell at profit</small></span><input type="checkbox" id="cfg-dca"></label>
       <label><span>First buy, % below 24h high</span><input type="number" id="cfg-dip" step="0.5" min="1"></label>
       <label><span>Next buy, % below last buy</span><input type="number" id="cfg-step" step="0.5" min="1"></label>
       <label><span>Sell all at % profit</span><input type="number" id="cfg-tp" step="0.1" min="0.5"></label>
@@ -298,7 +298,7 @@
 
       let msg = '';
       if (!live) msg = 'Paper mode: real Binance prices, pretend money. For real money: ⚙ Settings → Real money.';
-      if (!running) msg = 'The bot is stopped: no new buys. Press Start. (An open ENA round still sells at its profit target.)';
+      if (!running) msg = 'The bot is stopped: no new buys. Press Start. (An open DCA round still sells at its profit target.)';
       $('notice').hidden = !msg; $('notice').textContent = msg;
 
       // overview
@@ -496,7 +496,7 @@
       const body = { dca_enabled: $('cfg-dca').checked, futures_paper_enabled: $('cfg-fut').checked, hourly_report: $('cfg-hourly').checked };
       for (const [id, k] of [['cfg-dip', 'dca_dip_pct'], ['cfg-step', 'dca_step_pct'], ['cfg-tp', 'dca_tp_pct']]) { const v = parseFloat($(id).value); if (isFinite(v) && v > 0) body[k] = v; }
       const wantLive = $('cfg-live').checked, isLiveNow = c.live_trading === true;
-      if (wantLive && !isLiveNow && !confirm('Turn on LIVE trading? The bot will buy and sell ENA with your real money on Binance.')) return;
+      if (wantLive && !isLiveNow && !confirm('Turn on LIVE trading? The bot will buy and sell coins with your real money on Binance.')) return;
       if (wantLive !== isLiveNow) body.live_trading = wantLive;
       await api('/api/config', body);
       $('settings').close();

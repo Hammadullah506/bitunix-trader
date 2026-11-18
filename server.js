@@ -163,14 +163,14 @@ function loadConfig() {
     live_trading: false,          // false = paper mode: real prices and decisions, no real orders
     hourly_report: true,          // Telegram summary of all signals every hour
     dca_enabled: true,            // dip-buying with averaging down on one coin (see dca.js)
-    dca_symbol: 'ENAUSDT',
-    dca_dip_pct: 8,               // first buy: this % below the last 24h high
+    dca_symbol: 'BTCUSDT',        // BTC moves ~3x less than ENA, so smaller dips than ENA's 8% / 5%
+    dca_dip_pct: 5,               // first buy: this % below the last 24h high
     dca_step_pct: 5,              // next buy: this % below the previous buy
     dca_mult: 1.4,                // each next buy is this many times bigger
-    dca_max_buys: 3,              // 7 + 9.80 + 13.72 = $30.52 at most
-    dca_base_usdt: 7,
+    dca_max_buys: 3,              // 7.30 + 10.22 + 14.31 = $31.83 at most
+    dca_base_usdt: 7.3,
     dca_tp_pct: 1.5,              // sell all at this % above the average cost, after fees
-    strategy_version: 7,
+    strategy_version: 8,
     max_daily_loss_usd: 1.5       // stop opening new trades after losing this much in a day
   };
   let cfg = defaultCfg;
